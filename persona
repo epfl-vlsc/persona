@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+
+import importlib
+import os
+import argparse
+import sys
+
+def load_modules():
+  dirs = os.listdir('modules')
+  mods = {}
+  for d in dirs:
+    if not os.path.isdir('modules/'+d):
+      continue
+    if d.startswith('_'):
+      continue
+    path = 'modules.' + d + '.entry'
+    mod = importlib.import_module(path)
+    mods[d] = mod
+  return mods
+
+def get_args(modules):
+
+  parser = argparse.ArgumentParser(description="Persona -- High-Performance Bioinformatics",
+                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  subparsers = parser.add_subparsers(help="Person submodules")
+
+  for name, mod in modules.items():
+    subparser = subparsers.add_parser(name, help="{} options".format(name))
+    mod.get_args(subparser)
+    subparser.set_defaults(func=mod.run)
+
+  args = parser.parse_args()
+
+  return args
+
+if __name__ == "__main__":
+  if (len(sys.argv) == 1):
+    print("Persona -- High-Performance Bioinformatics")
+    print("\nUse -h to see available options")
+    exit(0)
+  modules = load_modules()
+  args = get_args(modules)
+  args.func(args)
+ 
