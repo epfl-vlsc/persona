@@ -8,11 +8,16 @@ import sys
 def load_modules():
   dirs = os.listdir('modules')
   mods = {}
+  # load submodules into dict
+  # submodules must have entry.py with 2 functions
+  # get_args(subparser) which fills out its required args
+  # run(args) which actually runs it
   for d in dirs:
     if not os.path.isdir('modules/'+d):
       continue
     if d.startswith('_'):
       continue
+    # e.g modules.snap_align.entry
     path = 'modules.' + d + '.entry'
     mod = importlib.import_module(path)
     mods[d] = mod
@@ -24,6 +29,7 @@ def get_args(modules):
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   subparsers = parser.add_subparsers(help="Person submodules")
 
+  # have each submodule define its own args
   for name, mod in modules.items():
     subparser = subparsers.add_parser(name, help="{} options".format(name))
     mod.get_args(subparser)
@@ -36,7 +42,13 @@ def get_args(modules):
 if __name__ == "__main__":
   if (len(sys.argv) == 1):
     print("Persona -- High-Performance Bioinformatics")
-    print("\nUse -h to see available options")
+    msg = ("    -. .-.   .-. .-.   .-. .-.   .\n"
+    "    ||\|||\ /|||\|||\ /|||\|||\ /|\n"
+    "    |/ \|||\|||/ \|||\|||/ \|||\||\n"
+    "    ~   `-~ `-`   `-~ `-`   `-~ `-"
+    )
+    print(msg)
+    print("Use $ persona -h to see available options\n")
     exit(0)
   modules = load_modules()
   args = get_args(modules)
