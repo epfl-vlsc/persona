@@ -1,5 +1,8 @@
 import argparse
 
+def get_tooltip():
+  return "Sort an AGD dataset"
+
 def run(args):
   meta_file = args.metadata_file
   if not os.path.exists(meta_file) and os.path.isfile(meta_file):

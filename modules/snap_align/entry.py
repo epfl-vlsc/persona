@@ -2,6 +2,9 @@ import argparse
 import multiprocessing
 import os
 
+def get_tooltip():
+  return "Perform single or paired-end alignment on an AGD dataset using SNAP"
+
 def run(args):
   ceph_conf_path= args.ceph_conf_path
   if not os.path.exists(ceph_conf_path) and os.path.isfile(ceph_conf_path):

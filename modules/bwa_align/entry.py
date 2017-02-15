@@ -2,6 +2,9 @@ import argparse
 import multiprocessing
 import os
 
+def get_tooltip():
+  return "Perform single or paired-end alignment on an AGD dataset using BWA"
+
 def run(args):
   if args.null is not None:
       if args.null < 0.0:

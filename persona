@@ -27,11 +27,12 @@ def get_args(modules):
 
   parser = argparse.ArgumentParser(description="Persona -- High-Performance Bioinformatics",
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-  subparsers = parser.add_subparsers(help="Person submodules")
+  subparsers = parser.add_subparsers(help="Available modules; use $ persona <command> -h for details")
 
   # have each submodule define its own args
   for name, mod in modules.items():
-    subparser = subparsers.add_parser(name, help="{} options".format(name))
+    helpmsg = mod.get_tooltip()
+    subparser = subparsers.add_parser(name, help=helpmsg)
     mod.get_args(subparser)
     subparser.set_defaults(func=mod.run)
 
@@ -41,13 +42,15 @@ def get_args(modules):
 
 if __name__ == "__main__":
   if (len(sys.argv) == 1):
-    print("Persona -- High-Performance Bioinformatics")
-    msg = ("    -. .-.   .-. .-.   .-. .-.   .\n"
-    "    ||\|||\ /|||\|||\ /|||\|||\ /|\n"
-    "    |/ \|||\|||/ \|||\|||/ \|||\||\n"
-    "    ~   `-~ `-`   `-~ `-`   `-~ `-"
+    msg = (
+         "              ___                                 \n"
+         "-. .-.   .   / _ \___ _ __ ___  ___  _ __   __ _  .-. .-.   .\n"
+         "||\|||\ /|  / /_)/ _ \ '__/ __|/ _ \| '_ \ / _` | |||\|||\ /|\n"
+         "|/ \|||\|| / ___/  __/ |  \__ \ (_) | | | | (_| | ||/ \|||\||\n"
+         "~   `-~ `- \ /   \___|_|  |___/\___/|_| |_|\__,_| -`   `-~ `-\n"
     )
     print(msg)
+    print("Persona -- High-Performance Bioinformatics")
     print("Use $ persona -h to see available options\n")
     exit(0)
   modules = load_modules()
