@@ -1,4 +1,6 @@
+import os
 import argparse
+from . import local_mark_duplicates
 
 def get_tooltip():
   return "Mark PCR duplicate reads in an aligned AGD dataset."
@@ -11,7 +13,8 @@ def run(args):
   meta_file_dir = os.path.dirname(meta_file)
   if args.input is None:
       args.input = meta_file_dir
-  print("Running mark dups!")
+
+  local_mark_duplicates.run(args)
 
 def get_args(subparser):
   def numeric_min_checker(minimum, message):
@@ -25,7 +28,7 @@ def get_args(subparser):
       return check_number
 
   default_dir_help = "Defaults to metadata_file's directory"
-  subparser.add_argument("-r", "--read-parallel", default=1, type=numeric_min_checker(minimum=1, message="read parallelism"),
+  subparser.add_argument("-p", "--parse-parallel", default=1, type=numeric_min_checker(minimum=1, message="read parallelism"),
                       help="total paralellism level for reading data from disk")
   subparser.add_argument("-w", "--write-parallel", default=1, help="number of writers to use",
                       type=numeric_min_checker(minimum=1, message="number of writers min"))
