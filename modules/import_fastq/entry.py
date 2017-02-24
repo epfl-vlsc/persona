@@ -1,6 +1,7 @@
 import argparse
 import multiprocessing
 import os
+from . import convert
 
 def get_tooltip():
   return "Import FASTQ files into an AGD dataset"
@@ -15,6 +16,7 @@ def run(args):
   os.makedirs(args.out)
   args.logdir = make_abs(args.logdir, os.path.isdir)
   args.compress = False # force false for now
+  convert.run(args)
   print("Running import fastq!")
 
 def get_args(subparser):
