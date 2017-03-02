@@ -6,14 +6,15 @@ import argparse
 import sys
 
 def load_modules():
-  dirs = os.listdir('modules')
+  module_dir = os.path.dirname(os.path.realpath(__file__))
+  dirs = os.listdir(module_dir + '/modules')
   mods = {}
   # load submodules into dict
   # submodules must have entry.py with 2 functions
   # get_args(subparser) which fills out its required args
   # run(args) which actually runs it
   for d in dirs:
-    if not os.path.isdir('modules/'+d):
+    if not os.path.isdir(module_dir + '/modules/'+d):
       continue
     if d.startswith('_'):
       continue
