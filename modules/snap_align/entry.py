@@ -1,6 +1,7 @@
 import argparse
 import multiprocessing
 import os
+from . import snap_align_local
 
 def get_tooltip():
   return "Perform single or paired-end alignment on an AGD dataset using SNAP"
@@ -40,7 +41,8 @@ def run(args):
       raise EnvironmentError("need at least 1 parallel dequeue, got {}".format(args.parallel))
   if args.enqueue < 1:
       raise EnvironmentError("need at least 1 parallel enqueue, got {}".format(args.enqueue))
-  print("Running snap align!")
+
+  snap_align_local.run(args):
 
 def get_args(subparser):
   subparser.add_argument("-p", "--parallel", type=int, default=2, help="parallel decompression")
