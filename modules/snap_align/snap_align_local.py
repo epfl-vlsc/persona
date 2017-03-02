@@ -89,12 +89,7 @@ def _make_zmq_url(addr, port):
 
 def build_queues(server_addr, server_port, parallel_enqueue):
     source_name = persona_ops.zero_mq_source(url=_make_zmq_url(addr=server_addr, port=server_port), name="zmq_source")
-    base_suffix = tf.constant("base")
-    qual_suffix = tf.constant("qual")
-    base_name = tf.reduce_join([source_name, base_suffix], 0, separator=".")
-    qual_name = tf.reduce_join([source_name, qual_suffix], 0, separator=".")
-
-    record_queue = tf.train.batch_pdq(tensor_list=[base_name, qual_name, source_name],
+    record_queue = tf.train.batch_pdq(tensor_list=[source_name],
                                       batch_size=1, capacity=3, enqueue_many=False,
                                       num_threads=1, num_dq_ops=parallel_enqueue,
                                       name="ready_record_data_queue")
@@ -164,14 +159,12 @@ def create_ops(processed_batch, deep_verify, num_aligners, aligner_threads, subc
 def local_write_results(aligned_results, output_path, record_name, compress_output):
     ops = []
     for result_out, key_out, num_records, first_ordinal in aligned_results:
-        num_recs = tf.unstack(num_records, name="num_recs_unstack")
-        first_ord = tf.unstack(first_ordinal, name="first_ords_unstack")
         writer_op = persona_ops.parallel_column_writer(
             column_handle=result_out,
             record_type="results",
             record_id=record_name,
-            num_records=num_recs[0],
-            first_ordinal=first_ord[0],
+            num_records=num_records,
+            first_ordinal=first_ordinal,
             file_path=key_out, name="results_file_writer",
             compress=compress_output, output_dir=output_path
         )
@@ -260,8 +253,8 @@ def run(args):
         if len(record_batch) > 1:
           raise Exception("Local disk requires read parallelism of 1")
         mmap_pool = persona_ops.m_map_pool(size=10, bound=False, name="file_mmap_buffer_pool")
-        parsed_chunks = tf.contrib.persona.persona_in_pipe(dataset_dir=local_path, columns=["base", "qual"], key=record_batch[0], 
-                                                       mmap_pool=mmap_pool, buffer_pool=pp, parse_parallel=parallel_dequeue, process_parallel=1)
+        parsed_chunks = tf.contrib.persona.persona_in_pipe(dataset_dir=local_path, columns=["base", "qual"], key=record_batch[0],
+                                                           mmap_pool=mmap_pool, buffer_pool=pp, parse_parallel=parallel_dequeue, process_parallel=1)
 
     aligned_results, genome, options = create_ops(processed_batch=parsed_chunks, deep_verify=args.deep_verify,
                                                   num_aligners=args.aligners, num_writers=args.writers, subchunk_size=args.subchunking,
