@@ -30,7 +30,7 @@ class WrapperWriter:
 
 class ClusterManager:
 
-    _server_script = "persona_local.py"
+    _server_script = "snap_align_local.py"
     _kill_script = "pgrep -a python3 | grep {script} | awk '{{print $1}}' | xargs kill -{level}"
     _find_script = "pgrep -a python3 | grep {script} | awk '{{print $1}}'"
     _sudo_kill_script = "pgrep -a python3 | grep {script} | awk '{{print $1}}' | xargs sudo kill -{level}"
@@ -100,8 +100,8 @@ class ClusterManager:
             self.local_tensorflow_repo.remote().push()
             self.old_head = self.local_tensorflow_repo.head.ref
 
-        tf_align_path = os.path.join(self.remote_prep_path, "agdutils/persona")
-        ceph_path = os.path.join(tf_align_path, "../ceph_config")
+        tf_align_path = os.path.join(self.remote_prep_path, "persona-shell/modules/snap_align/")
+        ceph_path = os.path.join(self.remote_prep_path, "agdutils/ceph_config")
         server_file = os.path.join(tf_align_path, self._server_script)
         tensorflow_path = os.path.join(self.remote_prep_path, "tensorflow-fpga")
         local_tf_align_repo = git.Repo(path=__file__, search_parent_directories=True)

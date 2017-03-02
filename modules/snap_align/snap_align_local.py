@@ -293,3 +293,6 @@ def run(args):
 
     run_aligner(sink_op=sink_op, genomes=genomes, summary=summary, null=True if args.null else False)
 
+if __name__ == "__main__":
+    args = get_args()
+    run(args=args)
