@@ -174,8 +174,6 @@ def local_write_results(aligned_results, output_path, record_name, compress_outp
 def ceph_write_results(aligned_results, record_name, compress_output, cluster_name, user_name, pool_name, ceph_conf_path):
     ops = []
     for result_out, key_out, num_records, first_ordinal in aligned_results:
-        num_recs = tf.unstack(num_records, name="num_recs_unstack")
-        first_ord = tf.unstack(first_ordinal, name="first_ords_unstack")
         key_passthrough = persona_ops.ceph_writer(
             cluster_name=cluster_name,
             user_name=user_name,
@@ -186,8 +184,8 @@ def ceph_write_results(aligned_results, record_name, compress_output, cluster_na
             record_type="results",
             column_handle=result_out,
             file_name=key_out,
-            first_ordinal=first_ord[0],
-            num_records=num_recs[0],
+            first_ordinal=first_ordinal,
+            num_records=num_records,
             name="Ceph_Writer")
         ops.append(key_passthrough)
     return ops
@@ -247,7 +245,7 @@ def run(args):
 
     pp = persona_ops.buffer_pool(size=1, bound=False)
     if local_path is None:
-        parsed_chunks = tf.contrib.persona.persona_ceph_in_pipe(dataset_dir=local_path, columns=["base", "qual"], ceph_params=ceph_params, 
+        parsed_chunks = tf.contrib.persona.persona_ceph_in_pipe(columns=["base", "qual"], ceph_params=ceph_params, 
                                     keys=record_batch, buffer_pool=pp, parse_parallel=parallel_dequeue, process_parallel=1)
     else:
         if len(record_batch) > 1:
