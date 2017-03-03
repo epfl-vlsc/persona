@@ -80,9 +80,9 @@ class ClusterManager:
 
     def _spawn_machine(self, remote_machine, tensorflow_path, server_file, ceph_path, params, queue_host):
         host = remote_machine.host; shell = remote_machine.shell
-        print("Running command in '{host}' : '{svr_path} {params} --queue-host {queue_host}'".format(host=host,
-                                                                    svr_path=server_file, params=params, queue_host=queue_host))
-        server_proc = shell.spawn(["bash", "-c", "source {tf_path}/python_dev/bin/activate && cd {ceph_path} && python3 {server_path} {params} --queue-host {queue_host} ".format(
+        print("Running command in '{host}' in '{pth}' : '{svr_path} {params} --ceph-conf-path {ceph_path}/ceph.conf --queue-host {queue_host}'".format(host=host, pth=ceph_path,
+                                                                                                                                                       svr_path=server_file, params=params, queue_host=queue_host, ceph_path=ceph_path))
+        server_proc = shell.spawn(["bash", "-c", "source {tf_path}/python_dev/bin/activate && cd {ceph_path} && python3 {server_path} {params} --ceph-conf-path {ceph_path}/ceph.conf --queue-host {queue_host} ".format(
             tf_path=tensorflow_path, server_path=server_file, ceph_path=ceph_path, params=params, queue_host=queue_host
         )], store_pid=True, stdout=WrapperWriter(prefix="{host}-out".format(host=host), fd=sys.stdout, stop_event=self.wrapper_stop_event),
                                   stderr=WrapperWriter(prefix="{host}-err".format(host=host), fd=sys.stderr, stop_event=self.wrapper_stop_event))
