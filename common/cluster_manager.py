@@ -30,7 +30,7 @@ class WrapperWriter:
 
 class ClusterManager:
 
-    _server_script = "persona_local.py"
+    _server_script = "snap_align_local.py"
     _kill_script = "pgrep -a python3 | grep {script} | awk '{{print $1}}' | xargs kill -{level}"
     _find_script = "pgrep -a python3 | grep {script} | awk '{{print $1}}'"
     _sudo_kill_script = "pgrep -a python3 | grep {script} | awk '{{print $1}}' | xargs sudo kill -{level}"
@@ -80,9 +80,9 @@ class ClusterManager:
 
     def _spawn_machine(self, remote_machine, tensorflow_path, server_file, ceph_path, params, queue_host):
         host = remote_machine.host; shell = remote_machine.shell
-        print("Running command in '{host}' : '{svr_path} {params} --queue-host {queue_host}'".format(host=host,
-                                                                    svr_path=server_file, params=params, queue_host=queue_host))
-        server_proc = shell.spawn(["bash", "-c", "source {tf_path}/python_dev/bin/activate && cd {ceph_path} && python3 {server_path} {params} --queue-host {queue_host} ".format(
+        print("Running command in '{host}' in '{pth}' : '{svr_path} {params} --ceph-conf-path {ceph_path}/ceph.conf --queue-host {queue_host}'".format(host=host, pth=ceph_path,
+                                                                                                                                                       svr_path=server_file, params=params, queue_host=queue_host, ceph_path=ceph_path))
+        server_proc = shell.spawn(["bash", "-c", "source {tf_path}/python_dev/bin/activate && cd {ceph_path} && python3 {server_path} {params} --ceph-conf-path {ceph_path}/ceph.conf --queue-host {queue_host} ".format(
             tf_path=tensorflow_path, server_path=server_file, ceph_path=ceph_path, params=params, queue_host=queue_host
         )], store_pid=True, stdout=WrapperWriter(prefix="{host}-out".format(host=host), fd=sys.stdout, stop_event=self.wrapper_stop_event),
                                   stderr=WrapperWriter(prefix="{host}-err".format(host=host), fd=sys.stderr, stop_event=self.wrapper_stop_event))
@@ -100,8 +100,8 @@ class ClusterManager:
             self.local_tensorflow_repo.remote().push()
             self.old_head = self.local_tensorflow_repo.head.ref
 
-        tf_align_path = os.path.join(self.remote_prep_path, "agdutils/persona")
-        ceph_path = os.path.join(tf_align_path, "../ceph_config")
+        tf_align_path = os.path.join(self.remote_prep_path, "persona-shell/modules/snap_align/")
+        ceph_path = os.path.join(self.remote_prep_path, "agdutils/ceph_config")
         server_file = os.path.join(tf_align_path, self._server_script)
         tensorflow_path = os.path.join(self.remote_prep_path, "tensorflow-fpga")
         local_tf_align_repo = git.Repo(path=__file__, search_parent_directories=True)

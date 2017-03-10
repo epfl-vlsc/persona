@@ -69,8 +69,6 @@ def get_args(subparser):
     subparser.add_argument("--summary", default=False, action="store_true", help="Add TensorFlow summary info to the graph")
     subparser.add_argument("json_file", help="An AGD dataset metadata file")
     subparser.add_argument("hosts", nargs="+", help="names for hosts to run on")
-    subparser.add_argument("json_file", help="An AGD dataset metadata file")
-    subparser.add_argument("hosts", nargs="+", help="names for hosts to run on")
 
   
 
