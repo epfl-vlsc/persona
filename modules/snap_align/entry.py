@@ -1,6 +1,7 @@
 import argparse
 import multiprocessing
 import os
+import getpass
 from . import snap_align
 
 def get_tooltip():
@@ -41,7 +42,7 @@ def run(args):
     if not os.path.exists(args.json_file):
         raise EnvironmentError("File not found at path {path}".format(path=args.json_file))
 
-    snap_align.run(args):
+    snap_align.run(args)
 
 def get_args(subparser):
 
