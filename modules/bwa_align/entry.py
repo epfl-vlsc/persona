@@ -1,6 +1,7 @@
 import argparse
 import multiprocessing
 import os
+from . import persona_bwa
 
 def get_tooltip():
   return "Perform single or paired-end alignment on an AGD dataset using BWA"
@@ -21,7 +22,7 @@ def run(args):
       if args.aligner_threads + args.finalizer_threads > multiprocessing.cpu_count():
           raise EnvironmentError("More threads than available on machine {}".format(args.aligner_threads + args.finalizer_threads))
 
-  print("aligner {} finalizer {}".format(args.aligner_threads, args.finalizer_threads))
+  #print("aligner {} finalizer {}".format(args.aligner_threads, args.finalizer_threads))
 
   local_path = args.local_path
   if not (os.path.exists(local_path) and os.path.isdir(local_path)):
@@ -33,7 +34,8 @@ def run(args):
       raise EnvironmentError("need at least 1 parallel dequeue, got {}".format(args.parallel))
   if args.enqueue < 1:
       raise EnvironmentError("need at least 1 parallel enqueue, got {}".format(args.enqueue))
-  print("Running bwa align!")
+
+  persona_bwa.run(args)
 
 def get_args(subparser):
   subparser.add_argument("-p", "--parallel", type=int, default=2, help="parallel decompression")
@@ -45,6 +47,7 @@ def get_args(subparser):
   subparser.add_argument("-w", "--writers", type=int, default=0, help="the number of writer pipelines")
   subparser.add_argument("-c", "--compress", default=False, action='store_true', help="compress the output")
   subparser.add_argument("-i", "--index-path", default="/scratch/bwa_index/hs38DH.fa")
+  subparser.add_argument("-s", "--max-secondary", default=1, help="Max secondary results to store. >= 1 (required for chimaric results")
   subparser.add_argument("--paired", default=False, action='store_true', help="interpret dataset as interleaved paired dataset")
   subparser.add_argument("--null", type=float, required=False, help="use the null aligner instead of actually aligning")
   subparser.add_argument("--deep-verify", default=False, action='store_true', help="verify record integrity")

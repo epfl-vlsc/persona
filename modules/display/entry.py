@@ -1,6 +1,7 @@
 import argparse
 import multiprocessing
 import os
+from . import agd_output
 
 def get_tooltip():
   return "Display AGD records on stdout"
@@ -8,7 +9,7 @@ def get_tooltip():
 def run(args):
   if not os.path.isabs(args.json_file):
     args.json_file = os.path.abspath(args.json_file)
-  print("Running display!")
+  agd_output.run(args)
 
 def get_args(subparser):
 
