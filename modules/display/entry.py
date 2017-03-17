@@ -9,6 +9,8 @@ def get_tooltip():
 def run(args):
   if not os.path.isabs(args.json_file):
     args.json_file = os.path.abspath(args.json_file)
+  print(os.getpid())
+  import ipdb; ipdb.set_trace()
   agd_output.run(args)
 
 def get_args(subparser):

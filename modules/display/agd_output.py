@@ -46,8 +46,9 @@ def run(args):
   names = tf.constant(chunknames)
   size = tf.constant(chunk_size)
   unpack = tf.constant(args.unpack)
-  output = persona_ops.agd_output(path, names, size, start, finish)
-    
+  output = persona_ops.agd_output(path=path, chunk_names=names, chunk_size=size, 
+      start=start, finish=finish, columns=['metadata', 'base', 'qual', 'results', 'secondary0'])
+  
   init_op = tf.initialize_all_variables()
 
   #print(os.getpid())
