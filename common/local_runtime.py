@@ -24,27 +24,30 @@ def execute(args, modules):
   service = module.get_service()
 
   # args ensure every module must specify dataset
-  with open(args.dataset, 'r') as j:
-    dataset = json.load(j)
-  
-  records = dataset['records']
-  chunknames = []
-  for record in records:
-    chunknames.append(record['path'])
+  if os.path.isfile(args.dataset):
+      with open(args.dataset, 'r') as j:
+        dataset = json.load(j)
+      
+      records = dataset['records']
+      chunknames = []
+      for record in records:
+        chunknames.append(record['path'])
 
-  producer = tf.train.string_input_producer(string_tensor=chunknames, num_epochs=1, 
-      shuffle=False, name="executor_input_producer")
+      producer = tf.train.string_input_producer(string_tensor=chunknames, num_epochs=1, 
+          shuffle=False, name="executor_input_producer")
+  else:
+      producer = None
 
-  print(producer)
   service_ops, service_init_ops = service.make_graph(producer, args)
 
   init_ops = [tf.global_variables_initializer(), tf.local_variables_initializer()]
-  init_ops.extend(service_init_ops)
+  #init_ops.extend(service_init_ops)
 
   # service graph may have summary nodes
   merged = tf.summary.merge_all()
   summary = True if hasattr(args, 'summary') else False
 
+  results = []
   with tf.Session() as sess:
       if summary:
           trace_dir = setup_output_dir(dirname=args.local + "_summary")
@@ -53,19 +56,29 @@ def execute(args, modules):
           count = 0
 
       sess.run(init_ops)
+      if len(service_init_ops) > 0:
+          sess.run(service_init_ops)
 
-      coord = tf.train.Coordinator()
-      print("Local executor starting {} ...".format(args.local))
-      threads = tf.train.start_queue_runners(coord=coord, sess=sess)
-      while not coord.should_stop():
-          try:
-              a = sess.run(service_ops)
-              if summary:
-                  summary_writer.add_summary(a[-1], global_step=count)
-                  count += 1
-          except tf.errors.OutOfRangeError as e:
-              print('Got out of range error!')
-              break
-      print("Coord requesting stop")
-      coord.request_stop()
-      coord.join(threads, stop_grace_period_secs=10)
+      # its possible the service is a simple run once
+      if len(service_ops) > 0:
+          coord = tf.train.Coordinator()
+          print("Local executor starting {} ...".format(args.local))
+          threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+          while not coord.should_stop():
+              try:
+                  a = sess.run(service_ops)
+                  if summary:
+                      results.append(a[:-1])
+                      summary_writer.add_summary(a[-1], global_step=count)
+                      count += 1
+                  else:
+                      results.append(a)
+              except tf.errors.OutOfRangeError as e:
+                  print('Got out of range error!')
+                  break
+          print("Coord requesting stop")
+          coord.request_stop()
+          coord.join(threads, stop_grace_period_secs=10)
+
+      # service.on_finish(results)
+        

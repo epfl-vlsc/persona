@@ -27,6 +27,6 @@ class Service:
         evaluate, and a list of run-once ops"""
         raise NotImplementedError
 
-    def on_finish(self, args):
+    def on_finish(self, args, results):
         """ Called by runtime when execution finished """
         raise NotImplementedError

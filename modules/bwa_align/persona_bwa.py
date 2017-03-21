@@ -51,6 +51,12 @@ class BwaService(Service):
         if args.enqueue < 1:
           raise EnvironmentError("need at least 1 parallel enqueue, got {}".format(args.enqueue))
 
+        if in_queue is None:
+          if not os.path.isfile(args.dataset):
+            raise EnvironmentError("Not a valid dataset: {}".format(args.dataset))
+          else:
+            raise EnvironmentError("in queue was None")
+
         key = in_queue.dequeue()
         ops, run_once = run(key, args)
 

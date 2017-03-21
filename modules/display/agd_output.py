@@ -3,28 +3,36 @@ import tensorflow as tf
 import argparse
 import os
 import json
+from ..common.service import Service
 
 persona_ops = tf.contrib.persona.persona_ops()
 
-def get_args():
-    parser = argparse.ArgumentParser(description="An output utility for AGD Format",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+class DisplayService(Service):
+   
+    #default inputs
 
-    parser.add_argument("json_file", help="The json file describing the format")
-    parser.add_argument("start", type=int, help="The absolute index at which to start printing records")
-    parser.add_argument("finish", type=int, help="The absolute index at which to stop printing records")
-    parser.add_argument("-u", "--unpack", default=True, action='store_false', help="Whether or not to unpack binary bases")
-    
-    args = parser.parse_args()
+    def output_dtypes(self):
+        return []
+    def output_shapes(self):
+        return []
+    def make_graph(self, in_queue, args):
+        """ Make the graph for this service. Returns two 
+        things: a list of tensors which the runtime will 
+        evaluate, and a list of run-once ops"""
+        # make the graph
 
-    if not os.path.isabs(args.json_file):
-        args.json_file = os.path.abspath(args.json_file)
+        run_once = run(args)
 
-    return args
+        return [], run_once
+
+display_service_ = DisplayService()
+
+def service():
+    return display_service_
 
 def run(args):
 
-  with open(args.json_file, 'r') as j:
+  with open(args.dataset, 'r') as j:
     dataset_params = json.load(j)
 
   records = dataset_params['records']
@@ -38,24 +46,15 @@ def run(args):
     args.finish = args.start + 1
 
 
-  pathname = os.path.dirname(args.json_file) + '/'
+  pathname = os.path.dirname(args.dataset) + '/'
 
   path = tf.constant(pathname)
   start = tf.constant(args.start, dtype=tf.int32)
   finish = tf.constant(args.finish, dtype=tf.int32)
   names = tf.constant(chunknames)
   size = tf.constant(chunk_size)
-  unpack = tf.constant(args.unpack)
   output = persona_ops.agd_output(path=path, chunk_names=names, chunk_size=size, 
       start=start, finish=finish, columns=['metadata', 'base', 'qual', 'results', 'secondary0'])
-  
-  init_op = tf.initialize_all_variables()
 
-  #print(os.getpid())
-  #import ipdb; ipdb.set_trace()
-  with tf.Session() as sess:
-    sess.run([init_op])
-    sess.run([output])
+  return [output]
 
-if __name__ == "__main__":
-    run(get_args())

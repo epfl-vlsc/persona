@@ -9,8 +9,64 @@ import tensorflow as tf
 from tensorflow.python.ops import data_flow_ops, string_ops
 from tensorflow.python.framework import tensor_shape, dtypes
 from tensorflow.python.training import queue_runner
+from ..common.service import Service
 
 persona_ops = tf.contrib.persona.persona_ops()
+
+class ConvertService(Service):
+    """ A class representing a service module in Persona """
+   
+    #default inputs
+
+    def output_dtypes(self):
+        return []
+    def output_shapes(self):
+        return []
+    def make_graph(self, in_queue, args):
+        """ Make the graph for this service. Returns two 
+        things: a list of tensors which the runtime will 
+        evaluate, and a list of run-once ops"""
+        # make the graph
+        if len(args.name) > 31:
+          raise EnvironmentError("Name must be at most 31 characters. Got {}".format(len(args.name)))
+        args.fastq_files = [make_abs(p, os.path.isfile) for p in args.fastq_files]
+
+        dirname = os.path.dirname(args.dataset)
+
+        if os.path.exists(dirname):
+          subprocess.run("rm -rf {}".format(dirname), shell=True, check=True)
+        else:
+          os.makedirs(dirname)
+
+        args.compress = False # force false for now
+
+        self.output_records = []
+        self.output_metadata = {
+            "name": args.name, "version": 1, "records": output_records
+        }
+    
+        final_tensor = make_graph(args=args)
+
+        return [final_tensor], []
+    
+    def on_finish(self, args, results):
+        # self.output_records
+        for res in results:
+            name_bytes, first_ordinal, num_records = res
+            first_ordinal = int(first_ordinal)
+            num_records = int(num_records)
+            self.output_records.append({
+                'first': first_ordinal,
+                'path': name_bytes.decode(),
+                'last': first_ordinal + num_records
+            })
+        with open(args.dataset, 'w+') as f:
+            json.dump(self.output_metadata, f)
+
+convert_service_ = ConvertService()
+
+def service():
+    return convert_service_
 
 def read_pipeline(fastq_files):
     string_producer = tf.train.string_input_producer(fastq_files, num_epochs=1, shuffle=False)
@@ -75,45 +131,6 @@ def compressed_writer_pipeline(converters, write_parallelism, record_id, output_
                                                   num_recs=tf.to_int32(num_recs))
         yield file_path_out, first_ordinal, num_recs
 
-def get_args():
-    def numeric_min(min):
-        def check(a):
-            a = int(a)
-            if a < min:
-                raise argparse.ArgumentError("Value must be at least {min}. got {actual}".format(min=min, actual=a))
-            return a
-        return check
-
-    def make_abs(path, check_func):
-        if not (os.path.exists(path) and check_func(path)):
-            parser.error("'{}' is not a valid path".format(path))
-            return
-        return os.path.abspath(path)
-
-    parser = argparse.ArgumentParser(description="Grade-recording script",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("-c", "--chunk", type=numeric_min(1), default=10000, help="chunk size to create records")
-    parser.add_argument("-p", "--parallel-conversion", type=numeric_min(1), default=1, help="number of parallel converters")
-    parser.add_argument("-n", "--name", required=True, help="name for the record")
-    parser.add_argument("-o", "--out", default=".", help="directory to write the final record to")
-    parser.add_argument("--logdir", default=".", help="Directory to write tensorflow summary data. Default is PWD")
-    parser.add_argument("-w", "--write", default=1, type=numeric_min(1), help="number of parallel writers")
-    parser.add_argument("--summary", default=False, action='store_true', help="run with tensorflow summary nodes")
-    parser.add_argument("--compress", default=False, action='store_true', help="compress output blocks")
-    parser.add_argument("--compress-parallel", default=1, type=numeric_min(1), help="number of parallel compression pipelines")
-    parser.add_argument("fastq_files", nargs="+", help="the fastq file to convert")
-    args = parser.parse_args()
-    if len(args.name) > 31:
-        parser.error("Name must be at most 31 characters. Got {}".format(len(args.name)))
-    args.fastq_files = [make_abs(p, os.path.isfile) for p in args.fastq_files]
-    args.out = os.path.join(make_abs(args.out, os.path.isdir), args.name)
-    if os.path.exists(args.out):
-        subprocess.run("rm -rf {}".format(args.out), shell=True, check=True)
-    os.makedirs(args.out)
-    args.logdir = make_abs(args.logdir, os.path.isdir)
-    args.compress = False # force false for now
-    return args
-
 def make_graph(args):
     reader = read_pipeline(fastq_files=args.fastq_files)
     converters = conversion_pipeline(queued_fastq=reader, chunk_size=args.chunk, convert_parallelism=args.parallel_conversion)
@@ -124,47 +141,4 @@ def make_graph(args):
     final_queue = tf.train.batch_join_pdq(tuple(written_records), enqueue_many=False, num_dq_ops=1, batch_size=1, name="written_records_queue")
     return final_queue[0]
 
-def run(args):
-    final_tensor = make_graph(args=args)
-    ops = final_tensor
-    init_ops = [tf.global_variables_initializer(), tf.local_variables_initializer()]
-    merged = tf.summary.merge_all()
-    output_records = []
-    output_metadata = {
-        "name": args.name, "version": 1, "records": output_records
-    }
-    with tf.Session() as sess:
-        sess.run(init_ops)
-        count = 0
-        if args.summary:
-            summary_writer = tf.summary.FileWriter(logdir=os.path.join(args.logdir, "tf_logdir"), graph=sess.graph)
-            ops.append(merged)
-        coord = tf.train.Coordinator()
-        threads = tf.train.start_queue_runners(coord=coord, sess=sess)
-        while not coord.should_stop():
-            try:
-                res = sess.run(ops)
-                if args.summary:
-                    summary_writer.add_summary(res[-1], global_step=count)
-                    count += 1
-                    name_bytes, first_ordinal, num_records = res[:-1]
-                else:
-                    name_bytes, first_ordinal, num_records = res
-                first_ordinal = int(first_ordinal)
-                num_records = int(num_records)
-                output_records.append({
-                    'first': first_ordinal,
-                    'path': name_bytes.decode(),
-                    'last': first_ordinal + num_records
-                })
-            except tf.errors.OutOfRangeError as oore:
-                print("got out of range error: {}".format(oore))
-                break
-        coord.request_stop()
-        coord.join(threads)
-    with open(os.path.join(args.out, "{}.json".format(args.name)), 'w+') as f:
-        json.dump(output_metadata, f)
 
-if __name__ == "__main__":
-    args = get_args()
-    run(args=args)

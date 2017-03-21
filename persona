@@ -46,13 +46,12 @@ def get_args(modules):
     subparser = local_subparsers.add_parser(name, help=helpmsg, parents=[parent_parser])
     mod.get_args(subparser)
     subparser.set_defaults(func=local_runtime.execute)
-  
+ 
+  # TODO args and implementation for distributed execution
   dist_subparser = subparsers.add_parser("dist", help="Run Persona on a cluster")
   setup_subparser = subparsers.add_parser("setup", help="Setup Persona on a cluster")
 
-
   args = parser.parse_args()
-  print(args)
   return args
 
 if __name__ == "__main__":
