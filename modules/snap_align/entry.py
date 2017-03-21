@@ -54,7 +54,7 @@ def get_args(subparser):
     subparser.add_argument("-x", "--subchunking", type=int, default=5000, help="the size of each subchunk (in number of reads)")
     subparser.add_argument("-w", "--writers", type=int, default=0, help="the number of writer pipelines")
     subparser.add_argument("-c", "--compress", default=False, action='store_true', help="compress the output")
-    subparser.add_argument("-d", "--distribute", type=int, default=1, help="Specify the number of distributed machines")
+    #subparser.add_argument("-d", "--distribute", type=int, default=1, help="Specify the number of distributed machines")
     subparser.add_argument("--paired", default=False, action='store_true', help="interpret dataset as interleaved paired dataset")
     subparser.add_argument("--ceph-user", default="client.dcsl1024", help="ceph username")
     subparser.add_argument("--ceph-cluster", default="ceph", help="name for ceph cluster")

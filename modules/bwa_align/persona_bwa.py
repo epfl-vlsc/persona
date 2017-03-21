@@ -7,29 +7,61 @@ import os
 import shutil
 import json
 import time
+from ..common.service import Service
 
 import tensorflow as tf
 
 persona_ops = tf.contrib.persona.persona_ops()
 
-def setup_output_dir(dirname="cluster_traces"):
-    trace_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), dirname)
-    if os.path.exists(trace_path):
-        # nuke it
-        shutil.rmtree(trace_path)
-    os.makedirs(trace_path)
-    return trace_path
+class BwaService(Service):
+    """ A class representing a service module in Persona """
+   
+    #default inputs
 
+    def output_dtypes(self):
+        return []
+    def output_shapes(self):
+        return []
+    def make_graph(self, in_queue, args):
+        """ Make the graph for this service. Returns two 
+        things: a list of tensors which the runtime will 
+        evaluate, and a list of run-once ops"""
+        # make the graph
+        if args.null is not None:
+          if args.null < 0.0:
+              raise EnvironmentError("null wait time must be strictly non-negative. Got {}".format(args.null))
 
-def get_metadata_attributes(json_file):
-    with open(json_file, 'r') as j:
-        metadata = json.load(j)
-    records = metadata["records"]
-    chunk_keys = list(a["path"] for a in records)
-    print(chunk_keys)
-    return chunk_keys
+        index_path = args.index_path
+        if not (os.path.exists(index_path) and os.path.isfile(index_path)):
+          raise EnvironmentError("Index path '{}' specified incorrectly. Should be path/to/index.fa".format(index_path))
 
-def create_ops(metadata_json, deep_verify, aligner_threads, finalizer_threads, subchunk_size, num_writers, index_path, null_align, paired, dataset_dir, max_secondary):
+        if args.finalizer_threads == 0 and args.paired:
+          args.finalizer_threads = int(args.aligner_threads*0.31)
+          args.aligner_threads = args.aligner_threads - args.finalizer_threads
+        else:
+          if args.aligner_threads + args.finalizer_threads > multiprocessing.cpu_count():
+              raise EnvironmentError("More threads than available on machine {}".format(args.aligner_threads + args.finalizer_threads))
+
+        #print("aligner {} finalizer {}".format(args.aligner_threads, args.finalizer_threads))
+
+        if args.writers < 0:
+          raise EnvironmentError("need a strictly positive number of writers, got {}".format(args.writers))
+        if args.parallel < 1:
+          raise EnvironmentError("need at least 1 parallel dequeue, got {}".format(args.parallel))
+        if args.enqueue < 1:
+          raise EnvironmentError("need at least 1 parallel enqueue, got {}".format(args.enqueue))
+
+        key = in_queue.dequeue()
+        ops, run_once = run(key, args)
+
+        return ops, run_once
+
+bwa_service_ = BwaService()
+
+def service():
+    return bwa_service_
+
+def create_ops(key, deep_verify, aligner_threads, finalizer_threads, subchunk_size, num_writers, index_path, null_align, paired, dataset_dir, max_secondary):
 
     bwa_index = persona_ops.bwa_index(index_location=index_path, ignore_alt=False, name="index_loader")
     option_line = [e[1:] for e in "-M".split()]
@@ -39,7 +71,7 @@ def create_ops(metadata_json, deep_verify, aligner_threads, finalizer_threads, s
     drp = persona_ops.bwa_read_pool(size=0, bound=False)
     mmap_pool = persona_ops.m_map_pool(size=10, bound=False, name="file_mmap_buffer_pool")
 
-    parsed_chunks = tf.contrib.persona.persona_in_pipe(metadata_path=metadata_json, dataset_dir=dataset_dir, columns=["base", "qual"], key=None, 
+    parsed_chunks = tf.contrib.persona.persona_in_pipe(dataset_dir=dataset_dir, columns=["base", "qual"], key=key, 
                                                        mmap_pool=mmap_pool, buffer_pool=pp)
     aggregate_enqueue = []
     for chunk in parsed_chunks:
@@ -57,7 +89,7 @@ def create_ops(metadata_json, deep_verify, aligner_threads, finalizer_threads, s
 
         aggregate_enqueue.append((agd_read, key, num_reads, first_ord))
 
-    record, key, num_records, first_ordinal = tf.train.batch_join_pdq(tensor_list_list=[e for e in aggregate_enqueue],
+    record, key, num_records, first_ordinal = tf.contrib.persona.batch_join_pdq(tensor_list_list=[e for e in aggregate_enqueue],
                                                     batch_size=1, capacity=8,
                                                     enqueue_many=False,
                                                     num_dq_ops=1,
@@ -71,7 +103,7 @@ def create_ops(metadata_json, deep_verify, aligner_threads, finalizer_threads, s
         aligned_regs = persona_ops.bwa_aligner(index_handle=bwa_index, options_handle=options, num_threads=aligner_threads,
                                       max_read_size=400, read=record, subchunk_size=subchunk_size, name="bwa_align")
 
-        regs_out = tf.train.batch_pdq(tensor_list=[aligned_regs, key, num_records, first_ordinal], batch_size=1, enqueue_many=False,
+        regs_out = tf.contrib.persona.batch_pdq(tensor_list=[aligned_regs, key, num_records, first_ordinal], batch_size=1, enqueue_many=False,
                                       num_dq_ops=1, name="align_to_pestat_queue")[0]
 
         # second stage infer insert size for chunk
@@ -80,7 +112,7 @@ def create_ops(metadata_json, deep_verify, aligner_threads, finalizer_threads, s
                                                     read=regs_out_us, name="bwa_pe_stat");
 
         to_enq = [regs_stat, regs_out[1], regs_out[2], regs_out[3]]
-        regs_stat_out = tf.train.batch_pdq(tensor_list=to_enq, 
+        regs_stat_out = tf.contrib.persona.batch_pdq(tensor_list=to_enq, 
                                       batch_size=1, enqueue_many=False,
                                       num_dq_ops=1, name="pestat_to_finalizer_queue")[0]
        
@@ -90,34 +122,17 @@ def create_ops(metadata_json, deep_verify, aligner_threads, finalizer_threads, s
                                       buffer_list_pool=blp, read=regs_stat_us, subchunk_size=subchunk_size, 
                                       max_read_size=400, name="bwa_finalize")
         
-        aligned_results = tf.train.batch_pdq(tensor_list=[aligned_result, regs_stat_out[1], regs_stat_out[2], regs_stat_out[3]],
+        aligned_results = tf.contrib.persona.batch_pdq(tensor_list=[aligned_result, regs_stat_out[1], regs_stat_out[2], regs_stat_out[3]],
                                                 batch_size=1, capacity=8, #this queue should always be empty!
                                                 num_dq_ops=max(1, num_writers), name="results_to_sink")
     else:
         aligned = persona_ops.bwa_align_single(index_handle=bwa_index, options_handle=options, num_threads=aligner_threads,
                                       max_read_size=400, read=record, subchunk_size=subchunk_size, buffer_list_pool=blp, max_secondary=max_secondary, name="bwa_align")
-        aligned_results = tf.train.batch_pdq(tensor_list=[aligned, key, num_records, first_ordinal], batch_size=1, enqueue_many=False,
+        aligned_results = tf.contrib.persona.batch_pdq(tensor_list=[aligned, key, num_records, first_ordinal], batch_size=1, enqueue_many=False,
                                       num_dq_ops=1, name="align_results_out")
 
     return aligned_results, bwa_index, options
 
-def local_write_results(aligned_results, output_path, record_name, compress_output):
-    ops = []
-    for result_out, key_out, num_records, first_ordinal in aligned_results:
-        results = tf.unstack()
-        for i, res in enumerate(results):
-          writer_op = persona_ops.parallel_column_writer(
-              column_handle=res,
-              record_type="results",
-              record_id=record_name,
-              extension="results" if i == 0 else "secondary{}".format(i),
-              num_records=num_records,
-              first_ordinal=first_ordinal,
-              file_path=key_out, name="results_file_writer",
-              compress=compress_output, output_dir=output_path
-          )
-          ops.append(writer_op)
-    return ops
 
 def run_aligner(final_op, indexes, summary, null, metadata_path, max_secondary):
     #trace_dir = setup_output_dir()
@@ -184,21 +199,32 @@ def run_aligner(final_op, indexes, summary, null, metadata_path, max_secondary):
 
 
 
-def run(args):
+def setup_output_dir(dirname="cluster_traces"):
+    trace_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), dirname)
+    if os.path.exists(trace_path):
+        # nuke it
+        shutil.rmtree(trace_path)
+    os.makedirs(trace_path)
+    return trace_path
+
+
+
+def run(key, args):
     all_ops = []
     indexes = []
 
     parallel_enqueue = args.enqueue; parallel_dequeue = args.parallel
     mmap_queue_length = args.mmap_queue; 
-    local_path = args.local_path; paired = args.paired
+    paired = args.paired
     summary = args.summary
+    dataset_dir = os.path.dirname(args.dataset)
 
 
-    aligned_results, bwa_index, options = create_ops(metadata_json=args.metadata_file, deep_verify=args.deep_verify,
+    aligned_results, bwa_index, options = create_ops(key=key, deep_verify=args.deep_verify,
                                                   num_writers=args.writers, subchunk_size=args.subchunking,
                                                   aligner_threads=args.aligner_threads, finalizer_threads=args.finalizer_threads, 
                                                   index_path=args.index_path, null_align=args.null,
-                                                  paired=paired, dataset_dir=local_path, max_secondary=args.max_secondary)
+                                                  paired=paired, dataset_dir=dataset_dir, max_secondary=args.max_secondary)
     indexes.append(bwa_index)
 
     if args.writers == 0:
@@ -206,12 +232,15 @@ def run(args):
         sink_op = persona_ops.buffer_list_sink(results_out)
         ops = sink_op
     else:
-        print("adding writer")
-        ops = tf.contrib.persona.persona_parallel_out_pipe(path=local_path, column=["results", "secondary0"], 
+        columns = ['results']
+        for i in range(args.max_secondary):
+          columns.append("secondary{}".format(i))
+        ops = tf.contrib.persona.persona_parallel_out_pipe(path=dataset_dir, column=columns, 
                                             write_list_list=aligned_results, record_id="persona_results", compress=args.compress) 
 
     all_ops = ops
+    return all_ops, indexes
 
-    run_aligner(final_op=all_ops, indexes=indexes, summary=summary, null=True if args.null else False, metadata_path=args.metadata_file,
-        max_secondary=args.max_secondary)
+    #run_aligner(final_op=all_ops, indexes=indexes, summary=summary, null=True if args.null else False, metadata_path=args.metadata_file,
+    #    max_secondary=args.max_secondary)
 
