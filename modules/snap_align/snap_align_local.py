@@ -5,94 +5,69 @@ import argparse
 import multiprocessing
 import os
 import shutil
+from ..common.service import Service
 
 import tensorflow as tf
 
 persona_ops = tf.contrib.persona.persona_ops()
 
-def setup_output_dir(dirname="cluster_traces"):
-    trace_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), dirname)
-    if os.path.exists(trace_path):
-        # nuke it
-        shutil.rmtree(trace_path)
-    os.makedirs(trace_path)
-    return trace_path
+class SnapService(Service):
+    """ A class representing a service module in Persona """
+   
+    #default inputs
 
-def get_args():
-    parser = argparse.ArgumentParser(description="Persona instance that runs on a single machine. Usually called via personal.py",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("-p", "--parallel", type=int, default=2, help="parallel decompression")
-    parser.add_argument("-e", "--enqueue", type=int, default=1, help="parallel enqueuing")
-    parser.add_argument("-m", "--mmap-queue", type=int, default=2, help="size of the mmaped file record queue")
-    parser.add_argument("-a", "--aligners", type=int, default=1, help="number of aligners")
-    parser.add_argument("-t", "--aligner-threads", type=int, default=multiprocessing.cpu_count(), help="the number of threads to use per aligner")
-    parser.add_argument("-x", "--subchunking", type=int, default=5000, help="the size of each subchunk (in number of reads)")
-    parser.add_argument("-w", "--writers", type=int, default=0, help="the number of writer pipelines")
-    parser.add_argument("-c", "--compress", default=False, action='store_true', help="compress the output")
-    parser.add_argument("-i", "--index-path", default="/scratch/stuart/ref_index")
-    parser.add_argument("--paired", default=False, action='store_true', help="interpret dataset as interleaved paired dataset")
-    parser.add_argument("--null", type=float, required=False, help="use the null aligner instead of actually aligning")
-    parser.add_argument("--deep-verify", default=False, action='store_true', help="verify record integrity")
-    parser.add_argument("--local-path", default=None, help="if set, causes the cluster machines to read from this path on their local disks (NOT THE NETWORK)")
-    parser.add_argument("--ceph-read-chunk-size", default=(2**26), type=int, help="minimum size to read from ceph storage, in bytes")
-    parser.add_argument("--ceph-cluster-name", default="ceph", help="name for the ceph cluster")
-    parser.add_argument("--ceph-user-name", default="client.dcsl1024", help="ceph username")
-    # TODO this is rigid, needs to be changed to get from the queue service!
-    parser.add_argument("--ceph-pool-name", default="chunk_100000", help="ceph pool name")
-    parser.add_argument("--ceph-conf-path", default=os.path.join(os.path.dirname(__file__), "ceph_agd_align/ceph.conf"), help="path for the ceph configuration")
-    parser.add_argument("--summary", default=False, action="store_true", help="Add TensorFlow summary info to the graph")
-    parser.add_argument("--queue-host", help="queue service host")
-    parser.add_argument("--upstream-pull-port", type=int, default=5556, help="port to request new work items on")
-    parser.add_argument("--downstream-push-port", type=int, default=5557, help="port to send completed work items on")
+    def output_dtypes(self):
+        return []
+    def output_shapes(self):
+        return []
+    def make_graph(self, in_queue, args):
+        """ Make the graph for this service. Returns two 
+        things: a list of tensors which the runtime will 
+        evaluate, and a list of run-once ops"""
+        # make the graph
+        if in_queue is None:
+            raise EnvironmentError("in queue was none")
 
-    args = parser.parse_args()
+        if args.null is not None:
+            if args.null < 0.0:
+                raise EnvironmentError("null wait time must be strictly non-negative. Got {}".format(args.null))
 
-    ceph_conf_path= args.ceph_conf_path
-    if not os.path.exists(ceph_conf_path) and os.path.isfile(ceph_conf_path):
-        raise EnvironmentError("Ceph conf path {} either isn't a file, or doesn't exist".format(ceph_conf_path))
-    args.ceph_conf_path = os.path.abspath(ceph_conf_path)
+        a = args.ceph_read_chunk_size
+        if a < 1:
+            raise EnvironmentError("Ceph read chunk size most be strictly positive! Got {}".format(a))
 
-    a = args.ceph_read_chunk_size
-    if a < 1:
-        raise EnvironmentError("Ceph read chunk size most be strictly positive! Got {}".format(a))
+        if args.aligners < 1:
+            raise EnvironmentError("Must have a strictly positive number of aligners! Got {}".format(args.aligners))
 
-    if args.aligners < 1:
-        raise EnvironmentError("Must have a strictly positive number of aligners! Got {}".format(args.aligners))
+        if args.aligner_threads < args.aligners:
+            raise EnvironmentError("Aligner must have at least 1 degree of parallelism! Got {}".format(args.aligner_threads))
 
-    if args.null is not None:
-        if args.null < 0.0:
-            raise EnvironmentError("null wait time must be strictly non-negative. Got {}".format(args.null))
+        if args.writers < 0:
+            raise EnvironmentError("need a strictly positive number of writers, got {}".format(args.writers))
+        if args.parallel < 1:
+            raise EnvironmentError("need at least 1 parallel dequeue, got {}".format(args.parallel))
+        if args.enqueue < 1:
+            raise EnvironmentError("need at least 1 parallel enqueue, got {}".format(args.enqueue))
 
-    index_path = args.index_path
-    if not (os.path.exists(index_path) and os.path.isdir(index_path)):
-        raise EnvironmentError("Index path '{}' specified incorrectly. Doesn't exist".format(index_path))
 
-    if args.aligner_threads < args.aligners:
-        raise EnvironmentError("Aligner must have at least 1 degree of parallelism! Got {}".format(args.aligner_threads))
+        key = in_queue.dequeue()
+        ops, run_once = run(key, args)
 
-    local_path = args.local_path
-    if local_path is not None:
-        if not (os.path.exists(local_path) and os.path.isdir(local_path)):
-            raise EnvironmentError("Local path'{l}' not found".format(l=local_path))
+        return ops, run_once
 
-    if args.writers < 0:
-        raise EnvironmentError("need a strictly positive number of writers, got {}".format(args.writers))
-    if args.parallel < 1:
-        raise EnvironmentError("need at least 1 parallel dequeue, got {}".format(args.parallel))
-    if args.enqueue < 1:
-        raise EnvironmentError("need at least 1 parallel enqueue, got {}".format(args.enqueue))
+snap_service_ = SnapService()
 
-    return args
+def service():
+    return snap_service_
 
-def _make_zmq_url(addr, port):
-  return "tcp://{addr}:{port}".format(addr=addr, port=port)
 
-def build_queues(server_addr, server_port, parallel_enqueue):
-    source_name = persona_ops.zero_mq_source(url=_make_zmq_url(addr=server_addr, port=server_port), name="zmq_source")
-    record_queue = tf.train.batch_pdq(tensor_list=[source_name],
+
+
+def build_queues(key, parallel_enqueue):
+    record_queue = tf.contrib.persona.batch_pdq(tensor_list=[key],
                                       batch_size=1, capacity=3, enqueue_many=False,
                                       num_threads=1, num_dq_ops=parallel_enqueue,
-                                      name="ready_record_data_queue")
+                                      name="chunk_keys")
     return record_queue
 
 
@@ -122,7 +97,7 @@ def create_ops(processed_batch, deep_verify, num_aligners, aligner_threads, subc
 
         aggregate_enqueue.append((agd_read, key, num_reads, first_ord))
 
-    agd_records = tf.train.batch_join_pdq(tensor_list_list=[e for e in aggregate_enqueue],
+    agd_records = tf.contrib.persona.batch_join_pdq(tensor_list_list=[e for e in aggregate_enqueue],
                                           batch_size=1, capacity=num_aligners + 2,
                                           enqueue_many=False,
                                           num_dq_ops=num_aligners,
@@ -151,7 +126,7 @@ def create_ops(processed_batch, deep_verify, num_aligners, aligner_threads, subc
         result = (aligned_result, key, num_records, first_ordinal)
         results.append(result)
 
-    aligned_results = tf.train.batch_join_pdq(tensor_list_list=[r for r in results],
+    aligned_results = tf.contrib.persona.batch_join_pdq(tensor_list_list=[r for r in results],
                                               batch_size=1, capacity=2*num_aligners + 10, #this queue should always be empty!
                                               num_dq_ops=max(1, num_writers), name="results_to_sink")
     return aligned_results, genome, options
@@ -190,51 +165,19 @@ def ceph_write_results(aligned_results, record_name, compress_output, cluster_na
         ops.append(key_passthrough)
     return ops
 
-def run_aligner(sink_op, genomes, summary, null):
-    #trace_dir = setup_output_dir()
-    init_op = tf.global_variables_initializer()
-    merged = tf.summary.merge_all()
 
-    ops = [sink_op]
-
-
-    with tf.Session() as sess:
-        if summary:
-            trace_dir = setup_output_dir()
-            ops.append(merged)
-            summary_writer = tf.train.SummaryWriter("{trace_dir}/tf_summary".format(trace_dir=trace_dir), graph=sess.graph, max_queue=2**20, flush_secs=10**4)
-            count = 0
-        sess.run([init_op])  # required for epoch input variable
-        if not null:
-            sess.run(genomes)
-        coord = tf.train.Coordinator()
-        print("Starting Run")
-        threads = tf.train.start_queue_runners(coord=coord, sess=sess)
-        while not coord.should_stop():
-            try:
-                a = sess.run(ops)
-                if summary:
-                    summary_writer.add_summary(a[-1], global_step=count)
-                    count += 1
-            except tf.errors.OutOfRangeError:
-                print('Got out of range error!')
-                break
-        print("Coord requesting stop")
-        coord.request_stop()
-        coord.join(threads, stop_grace_period_secs=10)
-
-def run(args):
+def run(key, args):
     all_ops = []
     genomes = []
 
     parallel_enqueue = args.enqueue; parallel_dequeue = args.parallel
     mmap_queue_length = args.mmap_queue; min_ceph_read_size = args.ceph_read_chunk_size
-    queue_host = args.queue_host; summary = args.summary
+    summary = args.summary
     ceph_pool_name = args.ceph_pool_name; ceph_cluster_name = args.ceph_cluster_name
     ceph_user_name = args.ceph_user_name; ceph_conf_path = args.ceph_conf_path
     local_path = args.local_path; paired = args.paired
 
-    record_batch = build_queues(server_port=args.upstream_pull_port, server_addr=queue_host, parallel_enqueue=parallel_enqueue)
+    record_batch = build_queues(key, parallel_enqueue=parallel_enqueue)
 
     ceph_params = {}
     ceph_params["user_name"] = ceph_user_name
@@ -249,7 +192,7 @@ def run(args):
                                     keys=record_batch, buffer_pool=pp, parse_parallel=parallel_dequeue, process_parallel=1)
     else:
         if len(record_batch) > 1:
-          raise Exception("Local disk requires read parallelism of 1")
+          raise Exception("Local disk requires read parallelism of 1 (parallel_enqueue = 1)")
         mmap_pool = persona_ops.m_map_pool(size=10, bound=False, name="file_mmap_buffer_pool")
         parsed_chunks = tf.contrib.persona.persona_in_pipe(dataset_dir=local_path, columns=["base", "qual"], key=record_batch[0],
                                                            mmap_pool=mmap_pool, buffer_pool=pp, parse_parallel=parallel_dequeue, process_parallel=1)
@@ -274,16 +217,13 @@ def run(args):
 
     all_ops.extend(ops)
 
-    done_key = tf.train.batch_join_pdq(tensor_list_list=[(a,) for a in all_ops],
+    done_key = tf.contrib.persona.batch_join_pdq(tensor_list_list=[(a,) for a in all_ops],
                                        batch_size=1, capacity=100, # arbitrary
                                        enqueue_many=False,
                                        num_dq_ops=1,
                                        name="finished_record_keys")
 
-    sink_op = persona_ops.zero_mq_sink(input=done_key[0], url=_make_zmq_url(addr=queue_host, port=args.downstream_push_port), name="sink_op")
+    return [done_key], genomes
 
-    run_aligner(sink_op=sink_op, genomes=genomes, summary=summary, null=True if args.null else False)
+    #run_aligner(sink_op=sink_op, genomes=genomes, summary=summary, null=True if args.null else False)
 
-if __name__ == "__main__":
-    args = get_args()
-    run(args=args)
