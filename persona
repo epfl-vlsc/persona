@@ -69,6 +69,7 @@ if __name__ == "__main__":
     exit(0)
   modules = load_modules()
   args = get_args(modules)
-  #import ipdb; ipdb.set_trace()
+  print(os.getpid())
+  import ipdb; ipdb.set_trace()
   args.func(args, modules)
  

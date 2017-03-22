@@ -168,7 +168,6 @@ def ceph_write_results(aligned_results, record_name, compress_output, cluster_na
 
 
 def run(key, args):
-    all_ops = []
     genomes = []
 
     parallel_enqueue = args.enqueue; parallel_dequeue = args.parallel
@@ -207,7 +206,7 @@ def run(key, args):
     if args.writers == 0:
         results_out, key_out, _, _, = aligned_results[0]
         sink_op = persona_ops.buffer_list_sink(results_out)
-        ops = [sink_op]
+        ops = sink_op
     elif local_path is None:
         # TODO the record name and the pool name are hardcoded for a single run. Need to restart to do different pools!
         columns = ['results']
@@ -227,15 +226,8 @@ def run(key, args):
         ops = tf.contrib.persona.persona_parallel_out_pipe(path=local_path, column=columns, 
                                             write_list_list=aligned_results, record_id="persona_results", compress=args.compress) 
 
-    all_ops.extend(ops)
 
-    done_key = tf.contrib.persona.batch_join_pdq(tensor_list_list=[(a,) for a in all_ops],
-                                       batch_size=1, capacity=100, # arbitrary
-                                       enqueue_many=False,
-                                       num_dq_ops=1,
-                                       name="finished_record_keys")
-
-    return [done_key], genomes
+    return [ops], genomes
 
     #run_aligner(sink_op=sink_op, genomes=genomes, summary=summary, null=True if args.null else False)
 
