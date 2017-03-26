@@ -28,7 +28,7 @@ def load_modules():
 def get_args(modules):
 
   parent_parser = argparse.ArgumentParser(description="Persona -- High-Performance Bioinformatics",
-                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter, add_help=False)
+                                          formatter_class=argparse.ArgumentDefaultsHelpFormatter, add_help=False)
 
   parent_parser.add_argument("dataset", help="The AGD json metadata file describing the dataset")
 
@@ -46,10 +46,10 @@ def get_args(modules):
     subparser = local_subparsers.add_parser(name, help=helpmsg, parents=[parent_parser])
     mod.get_args(subparser)
     subparser.set_defaults(func=local_runtime.execute)
- 
+
   # TODO args and implementation for distributed execution
-  dist_subparser = subparsers.add_parser("dist", help="Run Persona on a cluster")
-  setup_subparser = subparsers.add_parser("setup", help="Setup Persona on a cluster")
+  dist_subparser = subparsers.add_parser("dist", help="Run a Persona job on an existing cluster")
+  setup_subparser = subparsers.add_parser("serve", help="Serve a Persona service on a cluster")
 
   args = parser.parse_args()
   return args
@@ -66,10 +66,9 @@ if __name__ == "__main__":
     print(msg)
     print("Persona -- High-Performance Bioinformatics")
     print("Use $ persona -h to see available options\n")
-    exit(0)
-  modules = load_modules()
-  args = get_args(modules)
-  print(os.getpid())
-  import ipdb; ipdb.set_trace()
-  args.func(args, modules)
- 
+  else:
+    modules = load_modules()
+    args = get_args(modules)
+    print(os.getpid())
+    import ipdb; ipdb.set_trace()
+    args.func(args, modules)
