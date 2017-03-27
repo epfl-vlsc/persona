@@ -97,7 +97,6 @@ def get_args(subparser):
   localsubparser.add_argument("--output", help="output directory, where the sorted files should be written\n{}".format(default_dir_help))
   localsubparser.add_argument("--summary", default=False, action='store_true', help="store summary information")
   localsubparser.add_argument("--logdir", default=".", help="Directory to write tensorflow summary data. Default is PWD")
-  localsubparser.add_argument("metadata_file", help="the json metadata file describing the chunks in the original result set")
 
   # args for ceph storage system
   cephsubparser = subsubparsers.add_parser(name="ceph", help="Options for sorting a dataset in Ceph object store")
@@ -120,6 +119,5 @@ def get_args(subparser):
   cephsubparser.add_argument("--logdir", default=".", help="Directory to write tensorflow summary data. Default is PWD")
   cephsubparser.add_argument("--output-pool", default="", help="The Ceph cluster pool in which the output dataset should be written")
   cephsubparser.add_argument("--ceph-read-chunk-size", default=(2**26), type=int, help="minimum size to read from ceph storage, in bytes")
-  cephsubparser.add_argument("metadata_file", help="the json metadata file describing the chunks in the original result set")
   cephsubparser.add_argument("ceph_params", help="Parameters for Ceph Reader")
 
