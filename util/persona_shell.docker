@@ -1,0 +1,10 @@
+FROM persona_full
+
+label maintainer "sam.whitlock@epfl.ch"
+
+# run this first for better build caching
+RUN apt-get -y install libssl-dev python3-lttng libffi-dev
+RUN pip3 install psutil spur pyzmq gitpython
+
+ADD . /persona/
+WORKDIR /persona

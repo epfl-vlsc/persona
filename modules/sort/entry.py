@@ -2,12 +2,12 @@ import argparse
 import os
 from . import local_sort
 from . import ceph_sort
+from ..common.parse import numeric_min_checker
 
 def get_tooltip():
   return "Sort an AGD dataset"
 
 def _run_local(args):
-  
   meta_file = args.metadata_file
   if not os.path.exists(meta_file) and os.path.isfile(meta_file):
       raise EnvironmentError("metadata file '{m}' either doesn't exist or is not a file".format(m=meta_file))
@@ -65,15 +65,6 @@ def run(args):
 
 
 def get_args(subparser):
-  def numeric_min_checker(minimum, message):
-    def check_number(n):
-        n = int(n)
-        if n < minimum:
-            raise argparse.ArgumentError("{msg}: got {got}, minimum is {minimum}".format(
-                msg=message, got=n, minimum=minimum
-            ))
-        return n
-    return check_number
   default_dir_help = "Defaults to metadata_file's directory"
   subsubparsers = subparser.add_subparsers(help="Supported storage subsystems", dest="storage")
 
@@ -83,7 +74,7 @@ def get_args(subparser):
   localsubparser.add_argument("-r", "--sort-read-parallel", default=1, type=numeric_min_checker(minimum=1, message="read parallelism min for sort phase"),
                       help="total parallelism level for local read pipeline for sort phase")
   localsubparser.add_argument("-c", "--column-grouping", default=5, help="grouping factor for parallel chunk sort",
-                      type=numeric_min_checker(minimum=1, message="column grouping min"))
+                              type=numeric_min_checker(minimum=1, message="column grouping min"))
   localsubparser.add_argument("-s", "--sort-parallel", default=1, help="number of sorting pipelines to run in parallel",
                       type=numeric_min_checker(minimum=1, message="sorting pipeline min"))
   localsubparser.add_argument("--sort-process-parallel", default=1, type=numeric_min_checker(minimum=1, message="parallel processing for sort stage"),
