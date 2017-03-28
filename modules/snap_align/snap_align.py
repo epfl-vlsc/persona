@@ -1,67 +1,105 @@
-#!/usr/bin/env python3
 from __future__ import print_function
 
-import argparse
 import multiprocessing
-import os
-import shutil
 from ..common.service import Service
+from ..common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
 
 import tensorflow as tf
 
 persona_ops = tf.contrib.persona.persona_ops()
 
-class SnapService(Service):
-    """ A class representing a service module in Persona """
-   
-    #default inputs
+class SnapCommonService(Service):
+    def tooltip(self):
+        return self.__doc__
+
+    def add_graph_args(self, parser):
+        # adds the common args to all graphs
+        parser.add_argument("-p", "--parallel", type=numeric_min_checker(1, "parallel decompression"), default=2, help="parallel decompression")
+        parser.add_argument("-e", "--enqueue", type=numeric_min_checker(1, "parallel enqueuing"), default=1, help="parallel enqueuing")
+        parser.add_argument("-m", "--mmap-queue", type=numeric_min_checker(1, "mmap queue size"), default=2, help="size of the mmaped file record queue")
+        parser.add_argument("-a", "--aligners", type=numeric_min_checker(1, "number of aligners"), default=1, help="number of aligners")
+        parser.add_argument("-t", "--aligner-threads", type=numeric_min_checker(1, "threads per aligner"), default=multiprocessing.cpu_count(), help="the number of threads to use per aligner")
+        parser.add_argument("-x", "--subchunking", type=numeric_min_checker(100, "don't go lower than 100 for subchunking size"), default=5000, help="the size of each subchunk (in number of reads)")
+        parser.add_argument("-w", "--writers", type=numeric_min_checker(0, "must have a non-negative number of writers"), default=0, help="the number of writer pipelines")
+        parser.add_argument("-c", "--compress", default=False, action='store_true', help="compress the output")
+        parser.add_argument("-s", "--max-secondary", type=numeric_min_checker(0, "must have a non-negative number of secondary results"), default=0, help="Max secondary results to store. >= 0 ")
+        parser.add_argument("--deep-verify", default=False, action='store_true', help="verify record integrity")
+        parser.add_argument("--paired", default=False, action='store_true', help="interpret dataset as interleaved paired dataset")
+        parser.add_argument("--summary", default=False, action="store_true", help="Add TensorFlow summary info to the graph")
+        parser.add_argument("-i", "--index-path", type=path_exists_checker(), default="/scratch/stuart/ref_index", help="location of the ref index on all machines. Make sure all machines have this path!")
+
+class CephCommonService(SnapCommonService):
+
+    def input_dtypes(self):
+        """ Ceph services require the key and the pool name """
+        return [tf.string] * 2
+
+    def input_shapes(self):
+        """ Ceph services require the key and the pool name """
+        return [tf.TensorShape()] * 2
+
+    def add_graph_args(self, parser):
+        super().add_graph_args(parser=parser)
+        parser.add_argument("--ceph-cluster-name", type=non_empty_string_checker, default="ceph", help="name for the ceph cluster")
+        parser.add_argument("--ceph-user-name", type=non_empty_string_checker, default="client.dcsl1024", help="ceph username")
+        parser.add_argument("--ceph-conf-path", type=path_exists_checker(check_dir=False), default="/etc/ceph/ceph.conf", help="path for the ceph configuration")
+        parser.add_argument("--ceph-read-chunk-size", default=(2**26), type=numeric_min_checker(128, "must have a reasonably large minimum read size from Ceph"), help="minimum size to read from ceph storage, in bytes")
+
+class CephSnapService(CephCommonService):
+    """ A service to use the snap aligner with a ceph dataset """
+    def output_dtypes(self):
+        pass
+
+    def output_shapes(self):
+        pass
+
+    def make_graph(self, in_queue, args):
+        pass
+
+class CephNullService(CephCommonService):
+    """ A service to read and write from ceph as if we were a performing real alignment,
+     but it performs no alignment """
 
     def output_dtypes(self):
-        return []
+        pass
+
     def output_shapes(self):
-        return []
+        pass
+
+    def make_graph(self, in_queue, args):
+        pass
+
+class LocalSnapService(SnapCommonService):
+    """ A service to use the SNAP aligner with a local dataset """
+
+    def output_dtypes(self):
+        pass
+
+    def output_shapes(self):
+        pass
+
+class LocalNullService(SnapCommonService):
+    """ A service to read and write from a local dataset as if we were a performing real alignment,
+     but it performs no alignment """
+
+    def output_dtypes(self):
+        pass
+
+    def output_shapes(self):
+        pass
+
+class CephSnapService(Service):
+
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two 
         things: a list of tensors which the runtime will 
         evaluate, and a list of run-once ops"""
         # make the graph
-        if in_queue is None:
-            raise EnvironmentError("in queue was none")
-
-        if args.null is not None:
-            if args.null < 0.0:
-                raise EnvironmentError("null wait time must be strictly non-negative. Got {}".format(args.null))
-
-        a = args.ceph_read_chunk_size
-        if a < 1:
-            raise EnvironmentError("Ceph read chunk size most be strictly positive! Got {}".format(a))
-
-        if args.aligners < 1:
-            raise EnvironmentError("Must have a strictly positive number of aligners! Got {}".format(args.aligners))
-
-        if args.aligner_threads < args.aligners:
-            raise EnvironmentError("Aligner must have at least 1 degree of parallelism! Got {}".format(args.aligner_threads))
-
-        if args.writers < 0:
-            raise EnvironmentError("need a strictly positive number of writers, got {}".format(args.writers))
-        if args.parallel < 1:
-            raise EnvironmentError("need at least 1 parallel dequeue, got {}".format(args.parallel))
-        if args.enqueue < 1:
-            raise EnvironmentError("need at least 1 parallel enqueue, got {}".format(args.enqueue))
-
 
         key = in_queue.dequeue()
         ops, run_once = run(key, args)
 
         return ops, run_once
-
-snap_service_ = SnapService()
-
-def service():
-    return snap_service_
-
-
-
 
 def build_queues(key, parallel_enqueue):
     record_queue = tf.contrib.persona.batch_pdq(tensor_list=[key],
