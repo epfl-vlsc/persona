@@ -7,21 +7,24 @@ from ..common.parse import numeric_min_checker, path_exists_checker, non_empty_s
 import tensorflow as tf
 
 persona_ops = tf.contrib.persona.persona_ops()
+from tf.contrib.persona import queues, pipeline
 
 class SnapCommonService(Service):
+    columns = ["base", "qual"]
+
     def tooltip(self):
         return self.__doc__
 
     def add_graph_args(self, parser):
         # adds the common args to all graphs
         parser.add_argument("-p", "--parallel", type=numeric_min_checker(1, "parallel decompression"), default=2, help="parallel decompression")
-        parser.add_argument("-e", "--enqueue", type=numeric_min_checker(1, "parallel enqueuing"), default=1, help="parallel enqueuing")
+        parser.add_argument("-e", "--enqueue", type=numeric_min_checker(1, "parallel enqueuing"), default=1, help="parallel enqueuing / reading from Ceph")
         parser.add_argument("-m", "--mmap-queue", type=numeric_min_checker(1, "mmap queue size"), default=2, help="size of the mmaped file record queue")
         parser.add_argument("-a", "--aligners", type=numeric_min_checker(1, "number of aligners"), default=1, help="number of aligners")
         parser.add_argument("-t", "--aligner-threads", type=numeric_min_checker(1, "threads per aligner"), default=multiprocessing.cpu_count(), help="the number of threads to use per aligner")
         parser.add_argument("-x", "--subchunking", type=numeric_min_checker(100, "don't go lower than 100 for subchunking size"), default=5000, help="the size of each subchunk (in number of reads)")
         parser.add_argument("-w", "--writers", type=numeric_min_checker(0, "must have a non-negative number of writers"), default=0, help="the number of writer pipelines")
-        parser.add_argument("-c", "--compress", default=False, action='store_true', help="compress the output")
+        #parser.add_argument("-c", "--compress", default=False, action='store_true', help="compress the output")
         parser.add_argument("-s", "--max-secondary", type=numeric_min_checker(0, "must have a non-negative number of secondary results"), default=0, help="Max secondary results to store. >= 0 ")
         parser.add_argument("--deep-verify", default=False, action='store_true', help="verify record integrity")
         parser.add_argument("--paired", default=False, action='store_true', help="interpret dataset as interleaved paired dataset")
@@ -36,7 +39,7 @@ class CephCommonService(SnapCommonService):
 
     def input_shapes(self):
         """ Ceph services require the key and the pool name """
-        return [tf.TensorShape()] * 2
+        return [tf.TensorShape([])] * 2
 
     def add_graph_args(self, parser):
         super().add_graph_args(parser=parser)
@@ -54,7 +57,96 @@ class CephSnapService(CephCommonService):
         pass
 
     def make_graph(self, in_queue, args):
-        pass
+        parallel_key_dequeue = (in_queue.dequeue() for _ in range(args.enqueue))
+        # parallel_key_dequeue = [(key, pool_name) x N]
+        ceph_read_buffers = pipeline.ceph_read_pipeline(upstream_tensors=parallel_key_dequeue,
+                                                        user_name=args.ceph_user_name,
+                                                        cluster_name=args.ceph_cluster_name,
+                                                        ceph_conf_path=args.ceph_conf_path,
+                                                        columns=self.columns)
+        # ceph_read_buffers = [(key, pool_name, chunk_buffers) x N]
+        ready_to_process_bufs = pipeline.join(upstream_tensors=ceph_read_buffers,
+                                              parallel=args.parallel,
+                                              capacity=args.mmap_queue,
+                                              multi=True)
+
+        to_agd_reader = (a[2] for a in ready_to_process_bufs)
+        pass_around_agd_reader = (a[:2] for a in ready_to_process_bufs)
+        multi_column_gen = pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=to_agd_reader)
+        processed_bufs = tuple(pass_around + processed_tuple for pass_around, processed_tuple in zip(pass_around_agd_reader, multi_column_gen))
+        assert len(processed_bufs) == len(ready_to_process_bufs) # TODO get rid of this assert and make the above statement back into a generator
+
+        ready_to_assemble = pipeline.join(upstream_tensors=processed_bufs,
+                                          parallel=4, capacity=32, multi=True) # Just made up these params :/
+
+        # ready_to_assemble: [(key, pool_name, output_buffers, num_records, first_ordinal, record_id) x N]
+        to_agd_assembler = ((output_buffers, num_records) for _, _, output_buffers, num_records, _, _ in ready_to_assemble)
+        pass_around_agd_assembler = ((key, pool_name, num_records, first_ordinal, record_id) for key, pool_name, _, num_records, first_ordinal, record_id in ready_to_assemble)
+        agd_read_assembler_gen = pipeline.agd_read_assembler(upstream_tensors=to_agd_assembler, include_meta=False)
+
+        assembled_records = tuple(pass_around + processed_tuple for pass_around, processed_tuple in zip(pass_around_agd_assembler, agd_read_assembler_gen))
+        assert len(assembled_records) == len(ready_to_assemble)
+
+        ready_to_align = pipeline.join(upstream_tensors=assembled_records,
+                                       parallel=args.aligners, capacity=32, multi=True) # TODO still have default args here
+
+        # TODO move all of this stuff into a help method, as it should be common for all
+
+        if args.paired:
+            aligner_type = persona_ops.snap_align_paired
+            aligner_options = persona_ops.paired_aligner_options(cmd_line="-o output.sam", name="paired_aligner_options")
+        else:
+            aligner_type = persona_ops.snap_align_single
+            aligner_options = persona_ops.aligner_options(cmd_line="-o output.sam", name="aligner_options") # -o output.sam will not actually do anything
+
+        aligner_dtype = tf.dtypes.string
+        aligner_shape = tf.tensor_shape.matrix(rows=args.max_secondary+1, cols=2)
+
+        def make_aligners(pass_around_gen, read_handles_gen, genome, options, buffer_list_pool, downstream_capacity=8): # TODO not sure what this capacity should be
+            for read_handle, pass_around in zip(read_handles_gen, pass_around_gen):
+                single_aligner_queue = tf.FIFOQueue(capacity=downstream_capacity,
+                                                    dtypes=(aligner_dtype,),
+                                                    shapes=(aligner_shape,),
+                                                    name="aligner_post_queue")
+                pass_around_sink = tf.train.batch(tensors=pass_around, batch_size=1)
+                aligner_results = aligner_type(genome_handle=genome,
+                                               options_handle=options,
+                                               output_buffer_list_queue_handle=single_aligner_queue.queue_ref,
+                                               num_threads=args.aligner_threads,
+                                               read=read_handle,
+                                               buffer_list_pool=buffer_list_pool,
+                                               subchunk_size=args.subchunking,
+                                               max_secondary=args.max_secondary)
+                tf.train.queue_runner.add_queue_runner(tf.train.QueueRunner(queue=single_aligner_queue, enqueue_ops=(aligner_results,)))
+                pass_around_sink.append(single_aligner_queue.dequeue())
+                yield pass_around_sink
+
+        # ready_to_align: [(key, pool_name, num_records, first_ordinal, record_id, agd_read_handle) x N]
+        pass_around_example = ready_to_align[0][:-1]
+        aligner_sink_queue_shape = [a.get_shape() for a in pass_around_example]
+        aligner_sink_queue_data_type = [a.dtype for a in pass_around_example]
+        aligner_sink_queue_shape.append(aligner_dtype)
+        aligner_sink_queue_data_type.append(aligner_shape)
+
+        buffer_list_pool = persona_ops.buffer_list_pool(**pipeline.pool_default_args)
+
+        genome = persona_ops.genome_index(genome_location=args.index_path, name="genome_loader")
+        pass_around_gen = (a[:-1] for a in ready_to_align)
+        agd_read_handles_gen = (a[-1] for a in ready_to_align)
+
+        aligner_ready_results = pipeline.join(upstream_tensors=make_aligners(
+            pass_around_gen=pass_around_gen, read_handles_gen=agd_read_handles_gen, genome=genome,
+            options=aligner_options, buffer_list_pool=buffer_list_pool
+        ), parallel=args.writers, capacity=32) # not sure what to do for this
+
+        # type of aligned_results_queue: [(key, pool_name, num_records, first_ordinal, record_id, buffer_list_ref) x N]
+        # this happens to match the iterator in ceph_aligner_write_pipeline, but otherwise you can mix like above
+        null_writer_output = pipeline.ceph_aligner_write_pipeline(
+            upstream_tensors=aligner_ready_results
+        )
+        final_params_gen = (a[:-1] for a in aligner_ready_results)
+        return tuple((null_output,)+final_params for final_params, null_output in zip(final_params_gen, null_writer_output))
+
 
 class CephNullService(CephCommonService):
     """ A service to read and write from ceph as if we were a performing real alignment,
