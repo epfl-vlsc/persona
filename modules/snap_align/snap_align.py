@@ -7,7 +7,7 @@ from ..common.parse import numeric_min_checker, path_exists_checker, non_empty_s
 import tensorflow as tf
 
 persona_ops = tf.contrib.persona.persona_ops()
-from tf.contrib.persona import queues, pipeline
+from tf.contrib.persona import queues, io_pipe as pipeline
 
 class SnapCommonService(Service):
     columns = ["base", "qual"]
