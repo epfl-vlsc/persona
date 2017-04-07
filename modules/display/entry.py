@@ -1,11 +1,11 @@
-import argparse
-import multiprocessing
-import os
 from . import agd_output
 from ..common import parse
 
 def get_tooltip():
   return "Display AGD records on stdout"
+
+def get_services():
+    return []
 
 def get_service():
   return agd_output.service()

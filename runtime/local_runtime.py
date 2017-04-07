@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import importlib
 import os
 import argparse
@@ -17,7 +15,7 @@ def setup_output_dir(dirname="cluster_traces"):
     return trace_path
 
 def execute(args, modules):
-  if not args.modes == 'local':
+  if args.modes != 'local':
     raise Exception("Local runtime received args without local mode")
   module = modules[args.local]
 
@@ -81,4 +79,3 @@ def execute(args, modules):
           coord.join(threads, stop_grace_period_secs=10)
 
       # service.on_finish(results)
-        

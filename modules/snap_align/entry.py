@@ -1,15 +1,13 @@
-import argparse
-import multiprocessing
-import os
-import getpass
 from . import snap_align
 from ..common import parse, service
 
-class SNAPSingleton(service.ServiceSingleton):
-  class_type = snap_align.SnapService
+class CephSNAPSingleton(service.ServiceSingleton):
+  class_type = snap_align.CephSnapService
+
+_singletons = [ CephSNAPSingleton() ]
 
 def get_tooltip():
-  return "Perform single or paired-end alignment on an AGD dataset using SNAP"
+  return "Alignment using the SNAP aligner"
 
-def get_service():
-  return SNAPSingleton()
+def get_services():
+  return _singletons

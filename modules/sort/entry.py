@@ -1,4 +1,3 @@
-import argparse
 import os
 from . import local_sort
 from . import ceph_sort
@@ -6,6 +5,9 @@ from ..common.parse import numeric_min_checker
 
 def get_tooltip():
   return "Sort an AGD dataset"
+
+def get_services():
+    return []
 
 def _run_local(args):
   meta_file = args.metadata_file

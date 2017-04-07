@@ -4,8 +4,7 @@ from ..common import parse
 class Service:
     """ A class representing a service module in Persona """
 
-    def tooltip(self):
-        """ Return a short phrase describing this service, for use in the commandline launcher """
+    def get_shortname(self):
         raise NotImplementedError
 
     def input_dtypes(self):

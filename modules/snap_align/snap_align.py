@@ -7,13 +7,10 @@ from ..common.parse import numeric_min_checker, path_exists_checker, non_empty_s
 import tensorflow as tf
 
 persona_ops = tf.contrib.persona.persona_ops()
-from tf.contrib.persona import queues, io_pipe as pipeline
+from tensorflow.contrib.persona import queues, pipeline
 
 class SnapCommonService(Service):
     columns = ["base", "qual"]
-
-    def tooltip(self):
-        return self.__doc__
 
     def add_graph_args(self, parser):
         # adds the common args to all graphs
@@ -59,6 +56,10 @@ class CephCommonService(SnapCommonService):
 
 class CephSnapService(CephCommonService):
     """ A service to use the snap aligner with a ceph dataset """
+
+    def get_shortname(self):
+        return "ceph"
+
     def output_dtypes(self):
         return ((tf.dtypes.string,) * 3) + (tf.dtypes.int32, tf.dtypes.int64, tf.dtypes.string)
 
@@ -194,7 +195,7 @@ class LocalNullService(SnapCommonService):
     def output_shapes(self):
         pass
 
-class CephSnapService(Service):
+class OldCephSnapService(Service):
 
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two 

@@ -1,11 +1,12 @@
-import argparse
 import multiprocessing
-import os
 from . import persona_bwa
 from ..common import parse
 
 def get_service():
   return persona_bwa.service()
+
+def get_services():
+  return []
 
 def get_tooltip():
   return "Perform single or paired-end alignment on an AGD dataset using BWA"
