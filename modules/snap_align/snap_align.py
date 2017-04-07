@@ -51,7 +51,7 @@ class CephCommonService(SnapCommonService):
 class CephSnapService(CephCommonService):
     """ A service to use the snap aligner with a ceph dataset """
     def output_dtypes(self):
-        return ((tf.dtypes.string) * 3) + (tf.dtypes.int32, tf.dtypes.int64, tf.dtypes.string)
+        return ((tf.dtypes.string,) * 3) + (tf.dtypes.int32, tf.dtypes.int64, tf.dtypes.string)
 
     def output_shapes(self):
         return (tf.tensor_shape.scalar(),) * 6
