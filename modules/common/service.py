@@ -40,6 +40,13 @@ class Service:
         Override for services that do not require this capability """
         return True
 
+    def extract_run_args(self, args):
+        """ Based on what was added in `add_run_args`, extract the data from the arguments and return
+         an iterable of data values to enqueue.
+
+         The caller to this will put them into the input queue """
+        raise NotImplementedError
+
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two
         things: a list of tensors which the runtime will

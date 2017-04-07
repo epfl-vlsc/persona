@@ -41,6 +41,15 @@ class CephCommonService(SnapCommonService):
         """ Ceph services require the key and the pool name """
         return [tf.TensorShape([])] * 2
 
+    def extract_run_args(self, args):
+        dataset = args.dataset
+        pool_key = "ceph_pool" # TODO what is it actually?
+        if pool_key not in dataset:
+            raise Exception("key '{k}' not found in dataset keys {keys}".format(k=pool_key, keys=dataset.keys()))
+        records = dataset["records"]
+        ceph_pool = dataset[pool_key] # TODO might require fancier extraction
+        return tuple((a['path'], ceph_pool) for a in records)
+
     def add_graph_args(self, parser):
         super().add_graph_args(parser=parser)
         parser.add_argument("--ceph-cluster-name", type=non_empty_string_checker, default="ceph", help="name for the ceph cluster")
