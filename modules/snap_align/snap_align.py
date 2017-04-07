@@ -160,7 +160,7 @@ class CephSnapService(CephCommonService):
         final_params_gen = (a[:-1] for a in aligner_ready_results)
 
         # each item is [(final_write_key_with_extension, key, pool_name, num_records, first_ordinal, record_id) x N]
-        return tuple((writer_output,)+final_params for final_params, writer_output in zip(final_params_gen, writer_outputs))
+        return tuple((writer_output,)+final_params for final_params, writer_output in zip(final_params_gen, writer_outputs)), (genome,)
 
 
 class CephNullService(CephCommonService):
