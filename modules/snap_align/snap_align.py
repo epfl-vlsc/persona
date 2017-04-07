@@ -51,10 +51,10 @@ class CephCommonService(SnapCommonService):
 class CephSnapService(CephCommonService):
     """ A service to use the snap aligner with a ceph dataset """
     def output_dtypes(self):
-        pass
+        return ((tf.dtypes.string) * 3) + (tf.dtypes.int32, tf.dtypes.int64, tf.dtypes.string)
 
     def output_shapes(self):
-        pass
+        return (tf.tensor_shape.scalar(),) * 6
 
     def make_graph(self, in_queue, args):
         parallel_key_dequeue = (in_queue.dequeue() for _ in range(args.enqueue))
@@ -141,11 +141,16 @@ class CephSnapService(CephCommonService):
 
         # type of aligned_results_queue: [(key, pool_name, num_records, first_ordinal, record_id, buffer_list_ref) x N]
         # this happens to match the iterator in ceph_aligner_write_pipeline, but otherwise you can mix like above
-        null_writer_output = pipeline.ceph_aligner_write_pipeline(
-            upstream_tensors=aligner_ready_results
+        writer_outputs = pipeline.ceph_aligner_write_pipeline(
+            upstream_tensors=aligner_ready_results,
+            user_name=args.ceph_user_name,
+            cluster_name=args.ceph_cluster_name,
+            ceph_conf_path=args.ceph_conf_path
         )
         final_params_gen = (a[:-1] for a in aligner_ready_results)
-        return tuple((null_output,)+final_params for final_params, null_output in zip(final_params_gen, null_writer_output))
+
+        # each item is [(final_write_key_with_extension, key, pool_name, num_records, first_ordinal, record_id) x N]
+        return tuple((writer_output,)+final_params for final_params, writer_output in zip(final_params_gen, writer_outputs))
 
 
 class CephNullService(CephCommonService):
