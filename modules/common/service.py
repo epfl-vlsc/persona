@@ -14,7 +14,7 @@ class Service:
 
     def input_shapes(self):
         """ Required input queue shape. Default scalar """
-        return [tf.TensorShape()]
+        return [tf.TensorShape([])]
 
     def output_dtypes(self):
         """ Required output queue types """
