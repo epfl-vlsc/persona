@@ -144,7 +144,7 @@ class CephSnapService(CephCommonService):
                                                               ceph_conf_path=args.ceph_conf_path,
                                                               columns=self.columns))
         pass_around_central_gen = (a[:2] for a in ceph_read_buffers) # key, pool_name
-        to_central_gen = (a[2] for a in ceph_read_buffers) # [ chunk_buffer_handle x N ]
+        to_central_gen = (a[2] for a in ceph_read_buffers) # [ chunk_buffer_handles x N ]
 
         # aligner_results: [(buffer_list_result, (num_records, first_ordinal, record_id), (key, pool_name)) x N]
         aligner_results = self.make_central_pipeline(args=args,
@@ -183,11 +183,33 @@ class CephNullService(CephCommonService):
 class LocalSnapService(SnapCommonService):
     """ A service to use the SNAP aligner with a local dataset """
 
+    def get_shortname(self):
+        return "local"
+
     def output_dtypes(self):
         pass
 
     def output_shapes(self):
         pass
+
+    def make_graph(self, in_queue, args):
+        parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(args.enqueue))
+        # read_files: [(file_path, (mmaped_file_handles, a gen)) x N]
+        read_files = pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=self.columns)
+        # need to use tf.tuple to make sure that these are both made ready at the same time
+        combo = tuple((tf.tuple((file_basename,) + tuple(read_handle_gen) for file_basename, read_handle_gen in zip(parallel_key_dequeue, read_files))))
+        to_central_gen = (a[1:] for a in combo)
+        pass_around_gen = (a[0] for a in combo)
+
+        aligner_results = self.make_central_pipeline(args=args,
+                                                     input_gen=to_central_gen,
+                                                     pass_around_gen=pass_around_gen)
+
+        to_writer_gen = (buffer_list_handle, record_id, first_ordinal, num_records, file_basename for buffer_list_handle, (num_records, first_ordinal, record_id), file_basename in aligner_results)
+        written_records = pipeline.local_write_pipelien(upstream_tensors=to_writer_gen)
+        final_output_gen = zip(written_records, (record_id, first_ordinal, num_records, file_basename for _, (num_records, first_ordinal, record_id), file_basename in aligner_results))
+        return (b+(a,) for a,b in final_output_gen)
+
 
 class LocalNullService(SnapCommonService):
     """ A service to read and write from a local dataset as if we were a performing real alignment,
