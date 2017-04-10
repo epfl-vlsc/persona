@@ -150,8 +150,7 @@ class CephSnapService(CephCommonService):
         aligner_results = self.make_central_pipeline(args=args,
                                                      input_gen=to_central_gen,
                                                      pass_around_gen=pass_around_central_gen)
-        to_writer_gen = (key, pool_name, num_records, first_ordinal, record_id, buffer_list_ref for
-                         buffer_list_ref, (num_records, first_ordinal, record_id), (key, pool_name) in aligner_results)
+        to_writer_gen = ((key, pool_name, num_records, first_ordinal, record_id, buffer_list_ref) for buffer_list_ref, (num_records, first_ordinal, record_id), (key, pool_name) in aligner_results)
 
         # ceph writer pipeline wants (key, first_ord, num_recs, pool_name, record_id, column_handle)
 
@@ -163,7 +162,7 @@ class CephSnapService(CephCommonService):
             cluster_name=args.ceph_cluster_name,
             ceph_conf_path=args.ceph_conf_path
         )
-        return (b+(a,) for a,b in zip(writer_outputs, (key, pool_name, num_records, first_ordinal, record_id
+        return (b+(a,) for a,b in zip(writer_outputs, ((key, pool_name, num_records, first_ordinal, record_id)
                                                        for _, (num_records, first_ordinal, record_id), (key, pool_name) in aligner_results)))
 
 
@@ -187,10 +186,10 @@ class LocalSnapService(SnapCommonService):
         return "local"
 
     def output_dtypes(self):
-        pass
+        return ((tf.dtypes.string,) * 2) + (tf.dtypes.int32, tf.dtypes.int64, tf.dtypes.string)
 
     def output_shapes(self):
-        pass
+        return (tf.tensor_shape.scalar(),) * 5
 
     def make_graph(self, in_queue, args):
         parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(args.enqueue))
@@ -205,9 +204,9 @@ class LocalSnapService(SnapCommonService):
                                                      input_gen=to_central_gen,
                                                      pass_around_gen=pass_around_gen)
 
-        to_writer_gen = (buffer_list_handle, record_id, first_ordinal, num_records, file_basename for buffer_list_handle, (num_records, first_ordinal, record_id), file_basename in aligner_results)
+        to_writer_gen = ((buffer_list_handle, record_id, first_ordinal, num_records, file_basename) for buffer_list_handle, (num_records, first_ordinal, record_id), file_basename in aligner_results)
         written_records = pipeline.local_write_pipelien(upstream_tensors=to_writer_gen)
-        final_output_gen = zip(written_records, (record_id, first_ordinal, num_records, file_basename for _, (num_records, first_ordinal, record_id), file_basename in aligner_results))
+        final_output_gen = zip(written_records, ((record_id, first_ordinal, num_records, file_basename) for _, (num_records, first_ordinal, record_id), file_basename in aligner_results))
         return (b+(a,) for a,b in final_output_gen)
 
 
