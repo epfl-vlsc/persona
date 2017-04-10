@@ -15,7 +15,7 @@ def execute(args, modules):
     raise Exception("Local runtime received args without local mode")
   module = modules[args.local]
 
-  service_mode = args.services
+  service_mode = args.service
   service = module.lookup_service(name=service_mode)
   run_arguments = service.extract_run_args(args=args)
   input_dtypes = service.input_dtypes()
