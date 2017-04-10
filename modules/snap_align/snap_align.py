@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import os
 import multiprocessing
 from ..common.service import Service
 from ..common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
@@ -11,6 +12,10 @@ from tensorflow.contrib.persona import queues, pipeline
 
 class SnapCommonService(Service):
     columns = ["base", "qual"]
+
+    def extract_run_args(self, args):
+        dataset = args.dataset
+        return (a["path"] for a in dataset["records"])
 
     def add_graph_args(self, parser):
         # adds the common args to all graphs
@@ -107,9 +112,8 @@ class CephCommonService(SnapCommonService):
         pool_key = "ceph_pool" # TODO what is it actually?
         if pool_key not in dataset:
             raise Exception("key '{k}' not found in dataset keys {keys}".format(k=pool_key, keys=dataset.keys()))
-        records = dataset["records"]
         ceph_pool = dataset[pool_key] # TODO might require fancier extraction
-        return tuple((a['path'], ceph_pool) for a in records)
+        return ((a, ceph_pool) for a in super().extract_run_args(args=args))
 
     def add_graph_args(self, parser):
         super().add_graph_args(parser=parser)
@@ -179,7 +183,16 @@ class CephNullService(CephCommonService):
     def make_graph(self, in_queue, args):
         pass
 
-class LocalSnapService(SnapCommonService):
+class LocalCommonService(SnapCommonService):
+    def extract_run_args(self, args):
+        dataset_dir = args.dataset_dir
+        return (os.path.join(dataset_dir, a) for a in super().extract_run_args(args=args))
+
+    def add_run_args(self, parser):
+        super().add_graph_args(parser=parser)
+        parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), required=True, help="Directory containing ALL of the chunk files")
+
+class LocalSnapService(LocalCommonService):
     """ A service to use the SNAP aligner with a local dataset """
 
     def get_shortname(self):
@@ -210,7 +223,7 @@ class LocalSnapService(SnapCommonService):
         return (b+(a,) for a,b in final_output_gen)
 
 
-class LocalNullService(SnapCommonService):
+class LocalNullService(LocalCommonService):
     """ A service to read and write from a local dataset as if we were a performing real alignment,
      but it performs no alignment """
 
