@@ -209,7 +209,7 @@ class LocalSnapService(LocalCommonService):
         # read_files: [(file_path, (mmaped_file_handles, a gen)) x N]
         read_files = pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=self.columns)
         # need to use tf.tuple to make sure that these are both made ready at the same time
-        combo = tuple((tf.tuple((file_basename,) + tuple(read_handle_gen) for file_basename, read_handle_gen in zip(parallel_key_dequeue, read_files))))
+        combo = tuple(tf.tuple((file_basename,) + tuple(read_handle_gen)) for file_basename, read_handle_gen in zip(parallel_key_dequeue, read_files))
         to_central_gen = (a[1:] for a in combo)
         pass_around_gen = (a[0] for a in combo)
 
