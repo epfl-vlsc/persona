@@ -17,7 +17,7 @@ def execute(args, modules):
 
   service_mode = args.service
   service = module.lookup_service(name=service_mode)
-  run_arguments = service.extract_run_args(args=args)
+  run_arguments = tuple(service.extract_run_args(args=args))
   input_dtypes = service.input_dtypes()
   input_shapes = service.input_shapes()
 
