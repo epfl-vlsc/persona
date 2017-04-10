@@ -25,7 +25,7 @@ class SnapCommonService(Service):
         parser.add_argument("-a", "--aligners", type=numeric_min_checker(1, "number of aligners"), default=1, help="number of aligners")
         parser.add_argument("-t", "--aligner-threads", type=numeric_min_checker(1, "threads per aligner"), default=multiprocessing.cpu_count(), help="the number of threads to use per aligner")
         parser.add_argument("-x", "--subchunking", type=numeric_min_checker(100, "don't go lower than 100 for subchunking size"), default=5000, help="the size of each subchunk (in number of reads)")
-        parser.add_argument("-w", "--writers", type=numeric_min_checker(0, "must have a non-negative number of writers"), default=0, help="the number of writer pipelines")
+        parser.add_argument("-w", "--writers", type=numeric_min_checker(0, "must have a non-negative number of writers"), default=1, help="the number of writer pipelines")
         #parser.add_argument("-c", "--compress", default=False, action='store_true', help="compress the output")
         parser.add_argument("-s", "--max-secondary", type=numeric_min_checker(0, "must have a non-negative number of secondary results"), default=0, help="Max secondary results to store. >= 0 ")
         parser.add_argument("--deep-verify", default=False, action='store_true', help="verify record integrity")
@@ -207,11 +207,10 @@ class LocalSnapService(LocalCommonService):
     def make_graph(self, in_queue, args):
         parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(args.enqueue))
         # read_files: [(file_path, (mmaped_file_handles, a gen)) x N]
-        read_files = pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=self.columns)
+        read_files = tuple(tf.tuple((path_base,) + tuple(read_gen)) for path_base, read_gen in zip(parallel_key_dequeue, pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=self.columns)))
         # need to use tf.tuple to make sure that these are both made ready at the same time
-        combo = tuple(tf.tuple((file_basename,) + tuple(read_handle_gen)) for file_basename, read_handle_gen in zip(parallel_key_dequeue, read_files))
-        to_central_gen = (a[1:] for a in combo)
-        pass_around_gen = (a[0] for a in combo)
+        to_central_gen = tuple(a[1:] for a in read_files)
+        pass_around_gen = tuple(a[0] for a in read_files)
 
         aligner_results = self.make_central_pipeline(args=args,
                                                      input_gen=to_central_gen,
