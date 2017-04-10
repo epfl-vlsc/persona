@@ -189,7 +189,7 @@ class LocalCommonService(SnapCommonService):
         return (os.path.join(dataset_dir, a) for a in super().extract_run_args(args=args))
 
     def add_run_args(self, parser):
-        super().add_graph_args(parser=parser)
+        super().add_run_args(parser=parser)
         parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), required=True, help="Directory containing ALL of the chunk files")
 
 class LocalSnapService(LocalCommonService):
@@ -221,7 +221,6 @@ class LocalSnapService(LocalCommonService):
         written_records = pipeline.local_write_pipelien(upstream_tensors=to_writer_gen)
         final_output_gen = zip(written_records, ((record_id, first_ordinal, num_records, file_basename) for _, (num_records, first_ordinal, record_id), file_basename in aligner_results))
         return (b+(a,) for a,b in final_output_gen)
-
 
 class LocalNullService(LocalCommonService):
     """ A service to read and write from a local dataset as if we were a performing real alignment,

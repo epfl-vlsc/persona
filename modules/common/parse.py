@@ -20,8 +20,9 @@ def numeric_min_checker(minimum, message, numeric_type=int):
 def path_exists_checker(check_dir=True, make_absolute=True):
     def _func(path):
         if os.path.exists(path):
-            if check_dir and not os.path.isdir(path):
-                raise ArgumentTypeError("path {pth} exists, but isn't a directory".format(pth=path))
+            if check_dir:
+                if not os.path.isdir(path):
+                    raise ArgumentTypeError("path {pth} exists, but isn't a directory".format(pth=path))
             elif not os.path.isfile(path=path):
                 raise ArgumentTypeError("path {pth} exists, but isn't a file".format(pth=path))
         else:
