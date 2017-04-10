@@ -34,7 +34,7 @@ def get_args(modules):
 
   parser = argparse.ArgumentParser()
 
-  subparsers = parser.add_subparsers(help="Available modes", dest="modes")
+  subparsers = parser.add_subparsers(help="Available modes", dest="mode")
 
   local_subparser = subparsers.add_parser("local", help="Run Personal locally")
 
@@ -44,7 +44,7 @@ def get_args(modules):
   for name, mod in modules.items():
     helpmsg = mod.get_tooltip()
     module_subparser = local_subparsers.add_parser(name, help=helpmsg, parents=[parent_parser])
-    module_subparsers = module_subparser.add_subparsers()
+    module_subparsers = module_subparser.add_subparsers(help="Available services",dest="service")
     for module_service in mod.get_services():
       service_shortname = module_service.get_shortname()
       service_parser = module_subparsers.add_parser(service_shortname)

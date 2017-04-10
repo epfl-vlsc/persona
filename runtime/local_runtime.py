@@ -1,8 +1,4 @@
-import importlib
 import os
-import argparse
-import sys
-import json
 import tensorflow as tf
 import shutil
 
@@ -15,11 +11,12 @@ def setup_output_dir(dirname="cluster_traces"):
     return trace_path
 
 def execute(args, modules):
-  if args.modes != 'local':
+  if args.mode != 'local':
     raise Exception("Local runtime received args without local mode")
   module = modules[args.local]
 
-  service = module.get_service()
+  service_mode = args.services
+  service = module.lookup_service(name=service_mode)
   run_arguments = service.extract_run_args(args=args)
   input_dtypes = service.input_dtypes()
   input_shapes = service.input_shapes()
