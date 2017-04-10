@@ -23,14 +23,7 @@ def execute(args, modules):
 
   # We need the batch_join to "close" with a stop exception after enqueuing once
   # and the FIFOQueue so the graph can decide on its own how much parallelism it wants
-  first_in_queue = tf.train.batch_join(tensors_list=run_arguments, capacity=len(run_arguments),
-                                       batch_size=1)
-  in_queue = tf.FIFOQueue(dtypes=input_dtypes, # [a.dtype for a in first_in_queue],
-                          shapes=input_shapes, # [a.get_shape() for a in first_in_queue],
-                          capacity=len(run_arguments))
-  tf.train.add_queue_runner(
-      tf.train.QueueRunner(enqueue_ops=in_queue.enqueue(first_in_queue))
-  )
+  in_queue = tf.train.input_producer(input_tensor=run_arguments, num_epochs=1, shuffle=False, capacity=len(run_arguments))
 
   # TODO currently we assume all the service_ops are the same
   service_ops, service_init_ops = service.make_graph(in_queue=in_queue,
