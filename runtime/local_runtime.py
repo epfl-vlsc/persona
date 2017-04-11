@@ -1,6 +1,7 @@
 import os
 import tensorflow as tf
 import shutil
+from tensorflow.contrib.persona import pipeline
 
 def setup_output_dir(dirname="cluster_traces"):
     trace_path = os.path.join(os.path.dirname(os.getcwd()), dirname)
@@ -28,6 +29,7 @@ def execute(args, modules):
   # TODO currently we assume all the service_ops are the same
   service_ops, service_init_ops = service.make_graph(in_queue=in_queue,
                                                      args=args)
+  service_ops = tuple(service_ops)
   assert len(service_ops) + len(service_init_ops) > 0
 
   init_ops = [tf.global_variables_initializer(), tf.local_variables_initializer()]
@@ -45,12 +47,12 @@ def execute(args, modules):
           count = 0
 
       sess.run(init_ops)
-      if len(service_init_ops) > 0:
+      if len(service_init_ops) > 0 and False:
           sess.run(service_init_ops)
 
       # its possible the service is a simple run once
       if len(service_ops) > 0:
-          service_sink = tf.train.batch_join(tensors_list=service_ops, batch_size=1)
+          service_sink = pipeline.join(upstream_tensors=service_ops, capacity=8, parallel=1, multi=True)[0]
           coord = tf.train.Coordinator()
           print("Local executor starting {} ...".format(args.local))
           threads = tf.train.start_queue_runners(coord=coord, sess=sess)
