@@ -20,7 +20,7 @@ def get_args(subparser):
     subparser.add_argument("-x", "--subchunking", type=int, default=5000, help="the size of each subchunk (in number of reads)")
     subparser.add_argument("-w", "--writers", type=int, default=0, help="the number of writer pipelines")
     subparser.add_argument("-c", "--compress", default=False, action='store_true', help="compress the output")
-    subparser.add_argument("-s", "--max-secondary", default=0, help="Max secondary results to store. >= 0 ")
+    subparser.add_argument("-s", "--max-secondary", type=int, default=0, help="Max secondary results to store. >= 0 ")
     subparser.add_argument("--deep-verify", default=False, action='store_true', help="verify record integrity")
     subparser.add_argument("--paired", default=False, action='store_true', help="interpret dataset as interleaved paired dataset")
     subparser.add_argument("--ceph-cluster-name", default="ceph", help="name for the ceph cluster")
