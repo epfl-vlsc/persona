@@ -44,8 +44,8 @@ def execute(args, modules):
           trace_dir = setup_output_dir(dirname=args.local + "_summary")
           service_ops.append(merged)
           summary_writer = tf.summary.FileWriter(trace_dir, graph=sess.graph, max_queue=2**20, flush_secs=10**4)
-          count = 0
 
+      count = 0
       sess.run(init_ops)
       if len(service_init_ops) > 0:
           sess.run(service_init_ops)
@@ -58,11 +58,12 @@ def execute(args, modules):
           threads = tf.train.start_queue_runners(coord=coord, sess=sess)
           while not coord.should_stop():
               try:
+                  print("Running round {}".format(count))
                   result = sess.run(service_sink)
+                  count += 1
                   if summary:
                       results.append(result[:-1])
                       summary_writer.add_summary(result[-1], global_step=count)
-                      count += 1
                   else:
                       results.append(result)
               except tf.errors.OutOfRangeError:
