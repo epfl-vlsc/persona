@@ -25,7 +25,7 @@ class SnapCommonService(Service):
         parser.add_argument("-m", "--mmap-queue", type=numeric_min_checker(1, "mmap queue size"), default=2, help="size of the mmaped file record queue")
         parser.add_argument("-a", "--aligners", type=numeric_min_checker(1, "number of aligners"), default=1, help="number of aligners")
         parser.add_argument("-t", "--aligner-threads", type=numeric_min_checker(1, "threads per aligner"), default=multiprocessing.cpu_count(), help="the number of threads to use per aligner")
-        parser.add_argument("-x", "--subchunking", type=numeric_min_checker(100, "don't go lower than 100 for subchunking size"), default=5000, help="the size of each subchunk (in number of reads)")
+        parser.add_argument("-x", "--subchunking", type=numeric_min_checker(1, "don't go lower than 100 for subchunking size"), default=5000, help="the size of each subchunk (in number of reads)")
         parser.add_argument("-w", "--writers", type=numeric_min_checker(0, "must have a non-negative number of writers"), default=1, help="the number of writer pipelines")
         #parser.add_argument("-c", "--compress", default=False, action='store_true', help="compress the output")
         parser.add_argument("-s", "--max-secondary", type=numeric_min_checker(0, "must have a non-negative number of secondary results"), default=0, help="Max secondary results to store. >= 0 ")
@@ -63,10 +63,10 @@ class SnapCommonService(Service):
 
         if args.paired:
             aligner_type = persona_ops.snap_align_paired
-            aligner_options = persona_ops.paired_aligner_options(cmd_line="-o output.sam", name="paired_aligner_options")
+            aligner_options = persona_ops.paired_aligner_options(cmd_line="-o output.sam".split(), name="paired_aligner_options")
         else:
             aligner_type = persona_ops.snap_align_single
-            aligner_options = persona_ops.aligner_options(cmd_line="-o output.sam", name="aligner_options") # -o output.sam will not actually do anything
+            aligner_options = persona_ops.aligner_options(cmd_line="-o output.sam".split(), name="aligner_options") # -o output.sam will not actually do anything
 
         first_assembled_result = ready_to_align[0][1:]
         sink_queue_shapes = [a.get_shape() for a in first_assembled_result]
@@ -77,32 +77,31 @@ class SnapCommonService(Service):
         sink_queue_shapes.append(aligner_shape)
         sink_queue_dtypes.append(aligner_dtype)
 
-        pass_around_aligners = tuple(a[1:] for a in ready_to_align) # type: [(num_records, first_ordinal, record_id, pass_around x N) x N]
-        pass_to_aligners = tuple(a[0] for a in ready_to_align)
+        #pass_around_aligners = tuple(a[1:] for a in ready_to_align) # type: [(num_records, first_ordinal, record_id, pass_around x N) x N]
+        #pass_to_aligners = tuple(a[0] for a in ready_to_align)
 
         buffer_list_pool = persona_ops.buffer_list_pool(**pipeline.pool_default_args) # TODO should this be passed in as argument?
         genome = persona_ops.genome_index(genome_location=args.index_path, name="genome_loader")
 
+        single_executor = persona_ops.snap_single_executor(subchunk_size=args.subchunking,
+                                                           max_secondary=args.max_secondary,
+                                                           num_threads=args.aligner_threads,
+                                                           work_queue_size=args.aligners+1,
+                                                           options_handle=aligner_options,
+                                                           genome_handle=genome)
+        import ipdb; ipdb.set_trace()
         def make_aligners(downstream_capacity=8):
-            for read_handle, pass_around in zip(pass_to_aligners, pass_around_aligners):
-                single_aligner_queue = tf.FIFOQueue(capacity=downstream_capacity,
-                                                    dtypes=(aligner_dtype,),
-                                                    shapes=(aligner_shape,),
-                                                    name="aligner_post_queue")
-                pass_around_sink = pipeline.join(upstream_tensors=pass_around, parallel=1, capacity=downstream_capacity)[0]
-                aligner_results = aligner_type(genome_handle=genome,
-                                               options_handle=aligner_options,
-                                               output_buffer_list_queue_handle=single_aligner_queue.queue_ref,
-                                               num_threads=args.aligner_threads,
-                                               read=read_handle,
+            results = []
+            for read_handle, num_records, first_ord, record_id in ready_to_align:
+                
+                aligner_results = aligner_type(read=read_handle,
                                                buffer_list_pool=buffer_list_pool,
                                                subchunk_size=args.subchunking,
                                                max_secondary=args.max_secondary)
-                tf.train.queue_runner.add_queue_runner(tf.train.QueueRunner(queue=single_aligner_queue, enqueue_ops=(aligner_results,)))
-                pass_around_sink.insert(0, single_aligner_queue.dequeue()) # returns buffer_list_result + pass_around
-                yield tf.tuple(pass_around_sink)
+                results.append([aligner_results, num_records, first_ord, record_id])
+            return results
 
-        aligners = tuple(make_aligners())
+        aligners = make_aligners()
         aligned_results = pipeline.join(upstream_tensors=aligners, parallel=args.writers, multi=True, capacity=32)
         return aligned_results, (genome,) # returns [(buffer_list_handle, (num_records, first_ordinal, record_id), (pass_around)) x N]
 
