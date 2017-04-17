@@ -32,6 +32,7 @@ def get_args(subparser):
     subparser.add_argument("--null", type=float, help="use the null aligner instead of actually aligning")
     subparser.add_argument("--ceph-read-chunk-size", default=(2**26), type=int, help="minimum size to read from ceph storage, in bytes")
     subparser.add_argument("--summary", default=False, action="store_true", help="Add TensorFlow summary info to the graph")
+    subparser.add_argument("-r", "--args", default="", help="A string containing SNAP-specific args. Enclose in \" \" for multiple args")
 
   
 

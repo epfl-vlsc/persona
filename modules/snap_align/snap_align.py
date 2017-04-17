@@ -75,9 +75,9 @@ def create_ops(processed_batch, deep_verify, num_aligners, aligner_threads, subc
 
     genome = persona_ops.genome_index(genome_location=index_path, name="genome_loader")
     if paired:
-        options = persona_ops.paired_aligner_options(cmd_line="-o output.sam", name="paired_aligner_options")
+        options = persona_ops.paired_aligner_options(cmd_line="-o output.sam".split(), name="paired_aligner_options")
     else:
-        options = persona_ops.aligner_options(cmd_line="-o output.sam", name="aligner_options") # -o output.sam will not actually do anything
+        options = persona_ops.aligner_options(cmd_line="-o output.sam -om 20 -omax 1".split(), name="aligner_options") # -o output.sam will not actually do anything
 
     pp = persona_ops.buffer_pool(size=1, bound=False)
     drp = persona_ops.agd_read_pool(size=0, bound=False)
