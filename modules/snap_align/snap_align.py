@@ -35,11 +35,13 @@ class SnapCommonService(Service):
         parser.add_argument("-i", "--index-path", type=path_exists_checker(), default="/scratch/stuart/ref_index", help="location of the ref index on all machines. Make sure all machines have this path!")
 
     def make_central_pipeline(self, args, input_gen, pass_around_gen):
-        ready_to_process = pipeline.join(upstream_tensors=tuple(zip(input_gen, pass_around_gen)),
+        joiner = tuple(tuple(a) + tuple(b) for a,b in zip(input_gen, pass_around_gen))
+        ready_to_process = pipeline.join(upstream_tensors=joiner,
                                          parallel=args.parallel,
                                          capacity=args.mmap_queue,
                                          multi=True)
-        to_agd_reader, pass_around_agd_reader = zip(*ready_to_process)
+        # need to unpack better here
+        to_agd_reader, pass_around_agd_reader = zip(*((a[:2], a[2:]) for a in ready_to_process))
         multi_column_gen = pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=to_agd_reader)
 
         def process_processed_bufs():
@@ -52,12 +54,12 @@ class SnapCommonService(Service):
         ready_to_assemble = pipeline.join(upstream_tensors=processed_bufs,
                                           parallel=1, capacity=32, multi=True) # TODO these params are kinda arbitrary :/
         # ready_to_assemble: [output_buffers, num_records, first_ordinal, record_id, pass_around {flattened}) x N]
-        to_assembler, pass_around_assembler = zip(*((a[:4], a[4:]) for a in ready_to_assemble))
+        to_assembler, pass_around_assembler = zip(*((a[:2], a[1:]) for a in ready_to_assemble))
         # each item out of this is a handle to AGDReads
-        agd_read_assembler_gen = tuple(pipeline.agd_read_assembler(upstream_tensors=tuple(a[:2] for a in to_assembler), include_meta=False))
+        agd_read_assembler_gen = tuple(pipeline.agd_read_assembler(upstream_tensors=to_assembler, include_meta=False))
         # assembled_records, ready_to_align: [(agd_reads_handle, (num_records, first_ordinal, record_id), (pass_around)) x N]
-        assembled_records_gen = zip(agd_read_assembler_gen, (a[1:] for a in to_assembler), pass_around_assembler)
-        assembled_records = tuple(((a,) + tuple(b) + tuple(c)) for a,b,c in assembled_records_gen)
+        assembled_records_gen = tuple(zip(agd_read_assembler_gen, pass_around_assembler))
+        assembled_records = tuple(((a,) + tuple(b)) for a,b in assembled_records_gen)
         ready_to_align = pipeline.join(upstream_tensors=assembled_records,
                                        parallel=args.aligners, capacity=32, multi=True) # TODO still have default capacity here :/
 
@@ -80,7 +82,7 @@ class SnapCommonService(Service):
         pass_around_aligners = tuple(a[1:] for a in ready_to_align) # type: [(num_records, first_ordinal, record_id, pass_around x N) x N]
         pass_to_aligners = tuple(a[0] for a in ready_to_align)
 
-        buffer_list_pool = persona_ops.buffer_list_pool(**pipeline.pool_default_args) # TODO should this be passed in as argument?
+        buffer_list_pool = persona_ops.buffer_list_pool(**pipeline.pool_default_args)
         genome = persona_ops.genome_index(genome_location=args.index_path, name="genome_loader")
 
         single_executor = persona_ops.snap_single_executor(subchunk_size=args.subchunking,
@@ -89,22 +91,18 @@ class SnapCommonService(Service):
                                                            work_queue_size=args.aligners+1,
                                                            options_handle=aligner_options,
                                                            genome_handle=genome)
-        def make_aligners(downstream_capacity=8):
-            results = []
+        def make_aligners():
             for read_handle, pass_around in zip(pass_to_aligners, pass_around_aligners):
-                
                 aligner_results = aligner_type(read=read_handle,
                                                buffer_list_pool=buffer_list_pool,
                                                subchunk_size=args.subchunking,
                                                executor_handle=single_executor,
                                                max_secondary=args.max_secondary)
-                results.append([aligner_results, pass_around])
-            return results
+                yield (aligner_results,) + tuple(pass_around)
 
-        aligners = make_aligners()
-        import ipdb; ipdb.set_trace()
+        aligners = tuple(make_aligners())
         aligned_results = pipeline.join(upstream_tensors=aligners, parallel=args.writers, multi=True, capacity=32)
-        return aligned_results, (genome,) # returns [(buffer_list_handle, (num_records, first_ordinal, record_id), (pass_around)) x N]
+        return aligned_results, (genome,) # returns [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
 
 class CephCommonService(SnapCommonService):
 
@@ -219,13 +217,13 @@ class LocalSnapService(LocalCommonService):
         read_files = tuple(tf.tuple((path_base,) + tuple(read_gen)) for path_base, read_gen in zip(parallel_key_dequeue, pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=self.columns)))
         # need to use tf.tuple to make sure that these are both made ready at the same time
         to_central_gen = tuple(a[1:] for a in read_files)
-        pass_around_gen = tuple(a[0] for a in read_files)
+        pass_around_gen = tuple((a[0],) for a in read_files)
 
         aligner_results, run_first = tuple(self.make_central_pipeline(args=args,
                                                                       input_gen=to_central_gen,
                                                                       pass_around_gen=pass_around_gen))
 
-        to_writer_gen = tuple((buffer_list_handle, record_id, first_ordinal, num_records, file_basename) for buffer_list_handle, num_records, first_ordinal, record_id, file_basename in aligner_results)
+        to_writer_gen = tuple(((buffer_list_handle,), record_id, first_ordinal, num_records, file_basename) for buffer_list_handle, num_records, first_ordinal, record_id, file_basename in aligner_results)
         written_records = tuple(tuple(a) for a in pipeline.local_write_pipeline(upstream_tensors=to_writer_gen))
         final_output_gen = zip(written_records, ((record_id, first_ordinal, num_records, file_basename) for _, num_records, first_ordinal, record_id, file_basename in aligner_results))
         return (b+(a,) for a,b in final_output_gen), run_first
