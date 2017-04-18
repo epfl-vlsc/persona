@@ -77,8 +77,8 @@ class SnapCommonService(Service):
         sink_queue_shapes.append(aligner_shape)
         sink_queue_dtypes.append(aligner_dtype)
 
-        #pass_around_aligners = tuple(a[1:] for a in ready_to_align) # type: [(num_records, first_ordinal, record_id, pass_around x N) x N]
-        #pass_to_aligners = tuple(a[0] for a in ready_to_align)
+        pass_around_aligners = tuple(a[1:] for a in ready_to_align) # type: [(num_records, first_ordinal, record_id, pass_around x N) x N]
+        pass_to_aligners = tuple(a[0] for a in ready_to_align)
 
         buffer_list_pool = persona_ops.buffer_list_pool(**pipeline.pool_default_args) # TODO should this be passed in as argument?
         genome = persona_ops.genome_index(genome_location=args.index_path, name="genome_loader")
@@ -89,19 +89,20 @@ class SnapCommonService(Service):
                                                            work_queue_size=args.aligners+1,
                                                            options_handle=aligner_options,
                                                            genome_handle=genome)
-        import ipdb; ipdb.set_trace()
         def make_aligners(downstream_capacity=8):
             results = []
-            for read_handle, num_records, first_ord, record_id in ready_to_align:
+            for read_handle, pass_around in zip(pass_to_aligners, pass_around_aligners):
                 
                 aligner_results = aligner_type(read=read_handle,
                                                buffer_list_pool=buffer_list_pool,
                                                subchunk_size=args.subchunking,
+                                               executor_handle=single_executor,
                                                max_secondary=args.max_secondary)
-                results.append([aligner_results, num_records, first_ord, record_id])
+                results.append([aligner_results, pass_around])
             return results
 
         aligners = make_aligners()
+        import ipdb; ipdb.set_trace()
         aligned_results = pipeline.join(upstream_tensors=aligners, parallel=args.writers, multi=True, capacity=32)
         return aligned_results, (genome,) # returns [(buffer_list_handle, (num_records, first_ordinal, record_id), (pass_around)) x N]
 
