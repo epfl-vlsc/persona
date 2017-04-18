@@ -23,7 +23,7 @@ class BamExportService(Service):
         # make the graph
 
         key = in_queue.dequeue()
-        ops, run_once = run(key, args)
+        ops, run_once = export_bam(key, args)
 
         return ops, run_once
 
@@ -44,9 +44,23 @@ def export_bam(key, args):
   mmap_pool = persona_ops.m_map_pool(size=10,  bound=False, name="file_mmap_buffer_pool")
   
   local_dir = os.path.dirname(args.dataset)
-  parsed_chunks = tf.contrib.persona.persona_in_pipe(dataset_dir=local_dir, columns=["results", "base", "qual", "meta"], key=key, 
+  columns = ["base", "qual", "meta", "results"]
+  for column in manifest['columns']:
+    if 'secondary' in column:
+      columns.append(column)
+  print("BAM output using columns: {}".format(columns))
+  # TODO  provide option for reading from Ceph
+  parsed_chunks = tf.contrib.persona.persona_in_pipe(dataset_dir=local_dir, columns=columns, key=key, 
                                                      mmap_pool=mmap_pool, buffer_pool=pp)
-  key, num_recs, first_ord, results, bases, quals, meta = parsed_chunks
+  #key, num_recs, first_ord, bases, quals, meta, results = parsed_chunks
+  key = parsed_chunks[0]
+  num_recs = parsed_chunks[1]
+  first_ord = parsed_chunks[2]
+  bases = parsed_chunks[3]
+  quals = parsed_chunks[4]
+  meta = parsed_chunks[5]
+  # give a matrix of all the result columns
+  results = tf.stack(parsed_chunks[6:])
 
   if args.output_path == "":
     output_path = manifest['name'] + ".bam"

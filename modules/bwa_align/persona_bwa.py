@@ -194,14 +194,15 @@ def run_aligner(final_op, indexes, summary, null, metadata_path, max_secondary):
         ref_list = []
         for i, ref in enumerate(refs):
           ref_list.append((ref.decode("utf-8"), lens[i].item()))
-        metadata['reference'] = ref_list
+        metadata['reference_contigs'] = ref_list
+        metadata['reference'] = index_path
         # adjust columns field with number of secondary results
         columns = ['base', 'qual', 'meta', 'results']
         for i in range(max_secondary):
           columns.append("secondary{}".format(i))
         metadata['columns'] = columns
         with open("test.json", 'w') as j:
-          json.dump(metadata, j)
+          json.dump(obj=metadata, fp=j, indent=4)
 
 
 
