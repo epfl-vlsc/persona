@@ -35,7 +35,6 @@ class SnapCommonService(Service):
         parser.add_argument("-i", "--index-path", type=path_exists_checker(), default="/scratch/stuart/ref_index", help="location of the ref index on all machines. Make sure all machines have this path!")
 
     def make_central_pipeline(self, args, input_gen, pass_around_gen):
-        import ipdb; ipdb.set_trace()
         joiner = tuple(tuple(a) + tuple(b) for a,b in zip(input_gen, pass_around_gen))
         ready_to_process = pipeline.join(upstream_tensors=joiner,
                                          parallel=args.parallel,
