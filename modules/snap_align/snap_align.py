@@ -35,6 +35,7 @@ class SnapCommonService(Service):
         parser.add_argument("-i", "--index-path", type=path_exists_checker(), default="/scratch/stuart/ref_index", help="location of the ref index on all machines. Make sure all machines have this path!")
 
     def make_central_pipeline(self, args, input_gen, pass_around_gen):
+        import ipdb; ipdb.set_trace()
         joiner = tuple(tuple(a) + tuple(b) for a,b in zip(input_gen, pass_around_gen))
         ready_to_process = pipeline.join(upstream_tensors=joiner,
                                          parallel=args.parallel,
@@ -85,8 +86,7 @@ class SnapCommonService(Service):
         buffer_list_pool = persona_ops.buffer_list_pool(**pipeline.pool_default_args)
         genome = persona_ops.genome_index(genome_location=args.index_path, name="genome_loader")
 
-        single_executor = persona_ops.snap_single_executor(subchunk_size=args.subchunking,
-                                                           max_secondary=args.max_secondary,
+        single_executor = persona_ops.snap_single_executor(max_secondary=args.max_secondary,
                                                            num_threads=args.aligner_threads,
                                                            work_queue_size=args.aligners+1,
                                                            options_handle=aligner_options,
@@ -223,7 +223,7 @@ class LocalSnapService(LocalCommonService):
                                                                       input_gen=to_central_gen,
                                                                       pass_around_gen=pass_around_gen))
 
-        to_writer_gen = tuple(((buffer_list_handle,), record_id, first_ordinal, num_records, file_basename) for buffer_list_handle, num_records, first_ordinal, record_id, file_basename in aligner_results)
+        to_writer_gen = tuple((buffer_list_handle, record_id, first_ordinal, num_records, file_basename) for buffer_list_handle, num_records, first_ordinal, record_id, file_basename in aligner_results)
         written_records = tuple(tuple(a) for a in pipeline.local_write_pipeline(upstream_tensors=to_writer_gen))
         final_output_gen = zip(written_records, ((record_id, first_ordinal, num_records, file_basename) for _, num_records, first_ordinal, record_id, file_basename in aligner_results))
         return (b+(a,) for a,b in final_output_gen), run_first
