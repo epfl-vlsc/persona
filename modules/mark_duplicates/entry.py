@@ -1,5 +1,3 @@
-import os
-import argparse
 from . import agd_mark_duplicates
 from ..common.parse import numeric_min_checker
 
@@ -8,6 +6,9 @@ def get_tooltip():
 
 def get_service():
     return agd_mark_duplicates.service()
+
+def get_services():
+    return []
 
 def get_args(subparser):
   subparser.add_argument("-p", "--parse-parallel", default=1, type=numeric_min_checker(minimum=1, message="read parallelism"),

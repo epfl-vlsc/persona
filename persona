@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
+import argparse
 import importlib
 import os
-import argparse
 import sys
-from common import local_runtime
+
+from runtime import local_runtime
+
 
 def load_modules():
   module_dir = os.path.dirname(os.path.realpath(__file__))
@@ -30,11 +32,9 @@ def get_args(modules):
   parent_parser = argparse.ArgumentParser(description="Persona -- High-Performance Bioinformatics",
                                           formatter_class=argparse.ArgumentDefaultsHelpFormatter, add_help=False)
 
-  parent_parser.add_argument("dataset", help="The AGD json metadata file describing the dataset")
-
   parser = argparse.ArgumentParser()
 
-  subparsers = parser.add_subparsers(help="Available modes", dest="modes")
+  subparsers = parser.add_subparsers(help="Available modes", dest="mode")
 
   local_subparser = subparsers.add_parser("local", help="Run Personal locally")
 
@@ -43,13 +43,18 @@ def get_args(modules):
   # have each submodule define its own args
   for name, mod in modules.items():
     helpmsg = mod.get_tooltip()
-    subparser = local_subparsers.add_parser(name, help=helpmsg, parents=[parent_parser])
-    mod.get_args(subparser)
-    subparser.set_defaults(func=local_runtime.execute)
+    module_subparser = local_subparsers.add_parser(name, help=helpmsg, parents=[parent_parser])
+    module_subparsers = module_subparser.add_subparsers(help="Available services",dest="service")
+    for module_service in mod.get_services():
+      service_shortname = module_service.get_shortname()
+      service_parser = module_subparsers.add_parser(service_shortname)
+      module_service.add_graph_args(parser=service_parser)
+      module_service.add_run_args(parser=service_parser)
+    module_subparser.set_defaults(func=local_runtime.execute)
 
   # TODO args and implementation for distributed execution
-  dist_subparser = subparsers.add_parser("dist", help="Run a Persona job on an existing cluster")
-  setup_subparser = subparsers.add_parser("serve", help="Serve a Persona service on a cluster")
+  # dist_subparser = subparsers.add_parser("dist", help="Run a Persona job on an existing cluster")
+  # setup_subparser = subparsers.add_parser("serve", help="Serve a Persona service on a cluster")
 
   args = parser.parse_args()
   return args

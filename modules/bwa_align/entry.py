@@ -1,15 +1,17 @@
-import argparse
 import multiprocessing
-import os
 from . import persona_bwa
+from ..common import parse
 
 def get_service():
   return persona_bwa.service()
 
+def get_services():
+  return []
+
 def get_tooltip():
   return "Perform single or paired-end alignment on an AGD dataset using BWA"
 
-def get_args(subparser):
+def get_graph_args(subparser):
   subparser.add_argument("-p", "--parallel", type=int, default=2, help="parallel decompression")
   subparser.add_argument("-e", "--enqueue", type=int, default=1, help="parallel enqueuing")
   subparser.add_argument("-m", "--mmap-queue", type=int, default=2, help="size of the mmaped file record queue")
@@ -27,5 +29,5 @@ def get_args(subparser):
   subparser.add_argument("--summary", default=False, action="store_true", help="Add TensorFlow summary info to the graph")
   #subparser.add_argument("local_path", help="Read from this path on their local disks (NOT THE NETWORK)")
 
-  
-
+def get_run_args(subparser):
+  parse.add_dataset(subparser)

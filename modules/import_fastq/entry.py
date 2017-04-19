@@ -1,6 +1,3 @@
-import argparse
-import multiprocessing
-import os
 from . import convert
 from ..common.parse import numeric_min_checker
 
@@ -10,13 +7,10 @@ def get_tooltip():
 def get_service():
   return convert.service()
 
-def get_args(subparser):
-  def make_abs(path, check_func):
-      if not (os.path.exists(path) and check_func(path)):
-          parser.error("'{}' is not a valid path".format(path))
-          return
-      return os.path.abspath(path)
+def get_services():
+  return []
 
+def get_args(subparser):
   subparser.add_argument("-c", "--chunk", type=numeric_min_checker(1, "chunk size"), default=10000, help="chunk size to create records")
   subparser.add_argument("-p", "--parallel-conversion", type=numeric_min_checker(1, "parallel conversion"), default=1, help="number of parallel converters")
   subparser.add_argument("-n", "--name", required=True, help="name for the record")

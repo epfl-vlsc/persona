@@ -1,7 +1,4 @@
-import argparse
 import multiprocessing
-import os
-import json
 from . import export_bam
 
 def get_tooltip():
@@ -9,6 +6,9 @@ def get_tooltip():
 
 def get_service():
   return export_bam.service()
+
+def get_services():
+  return []
 
 def get_args(subparser):
 
