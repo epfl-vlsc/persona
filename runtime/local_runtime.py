@@ -12,12 +12,16 @@ def setup_output_dir(dirname="cluster_traces"):
     return trace_path
 
 def execute(args, modules):
-  if args.mode != 'local':
-    raise Exception("Local runtime received args without local mode")
-  module = modules[args.local]
+ 
+  module = modules[args.command]
 
-  service_mode = args.service
-  service = module.lookup_service(name=service_mode)
+  if hasattr(args, 'service'):
+    service_mode = args.service
+    service = module.lookup_service(name=service_mode)
+  else:
+    # there is only one service if the args does not have .service
+    service = module.get_services()[0]
+    
   run_arguments = tuple(service.extract_run_args(args=args))
   input_dtypes = service.input_dtypes()
   input_shapes = service.input_shapes()
@@ -54,7 +58,7 @@ def execute(args, modules):
       if len(service_ops) > 0:
           service_sink = pipeline.join(upstream_tensors=service_ops, capacity=8, parallel=1, multi=True)[0]
           coord = tf.train.Coordinator()
-          print("Local executor starting {} ...".format(args.local))
+          print("Local executor starting {} ...".format(args.command))
           threads = tf.train.start_queue_runners(coord=coord, sess=sess)
           while not coord.should_stop():
               try:

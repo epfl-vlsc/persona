@@ -16,6 +16,7 @@ class DisplayService(Service):
     def add_graph_args(self, parser):
         parser.add_argument("start", type=int, help="The absolute index at which to start printing records")
         parser.add_argument("finish", type=int, help="The absolute index at which to stop printing records")
+        parser.add_argument("-d", "--dataset-dir", required=True, help="The directory with the AGD dataset chunk files reside.")
         parser.add_argument("-u", "--unpack", default=True, action='store_false', help="Whether or not to unpack binary bases")
 
     def distributed_capability(self):
@@ -23,8 +24,14 @@ class DisplayService(Service):
 
     def output_dtypes(self):
         return []
+
     def output_shapes(self):
         return []
+
+    def extract_run_args(self, args):
+        # doesnt really have any effect, since display just runs once 
+        dataset = args.dataset
+        return (a["path"] for a in dataset["records"])
 
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two 
@@ -50,7 +57,10 @@ def run(args):
     args.finish = args.start + 1
 
 
-  pathname = os.path.dirname(args.dataset) + '/'
+  if args.dataset_dir[-1] is not '/':
+    pathname = os.path.dirname(args.dataset_dir) + '/'
+  else:
+    pathname = args.dataset_dir
 
   path = tf.constant(pathname)
   start = tf.constant(args.start, dtype=tf.int32)

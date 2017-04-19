@@ -34,7 +34,7 @@ def get_args(modules):
 
   parser = argparse.ArgumentParser()
 
-  subparsers = parser.add_subparsers(help="Available modules; use $ persona <command> -h for details")
+  subparsers = parser.add_subparsers(help="Available modules; use $ persona <command> -h for details", dest='command')
 
   # have each submodule define its own args
   for name, mod in modules.items():
@@ -45,7 +45,7 @@ def get_args(modules):
       module_service.add_graph_args(parser=module_subparser)
       module_service.add_run_args(parser=module_subparser)
     else:
-      module_subparsers = module_subparser.add_subparsers(help="Available services in module: ",dest="service")
+      module_subparsers = module_subparser.add_subparsers(help="Available services in module: ", dest="service")
       for module_service in mod.get_services():
         service_shortname = module_service.get_shortname()
         service_parser = module_subparsers.add_parser(service_shortname)
