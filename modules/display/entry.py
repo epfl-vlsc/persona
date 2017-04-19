@@ -1,19 +1,18 @@
 from . import agd_output
-from ..common import parse
+from ..common import service
+
+class DisplaySingleton(service.ServiceSingleton):
+  class_type = agd_output.DisplayService
+
+_singletons = [ DisplaySingleton() ]
+_service_map = { a.get_shortname(): a for a in _singletons }
 
 def get_tooltip():
   return "Display AGD records on stdout"
 
 def get_services():
-    return []
+  return _singletons
 
-def get_service():
-  return agd_output.service()
+def lookup_service(name):
+  return _service_map[name]
 
-def get_graph_args(subparser):
-    subparser.add_argument("start", type=int, help="The absolute index at which to start printing records")
-    subparser.add_argument("finish", type=int, help="The absolute index at which to stop printing records")
-    subparser.add_argument("-u", "--unpack", default=True, action='store_false', help="Whether or not to unpack binary bases")
-
-def get_run_args(subparser):
-  parse.add_dataset(subparser)

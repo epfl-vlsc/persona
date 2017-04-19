@@ -10,11 +10,22 @@ persona_ops = tf.contrib.persona.persona_ops()
 class DisplayService(Service):
    
     #default inputs
+    def get_shortname(self):
+        return "display"
+
+    def add_graph_args(self, parser):
+        parser.add_argument("start", type=int, help="The absolute index at which to start printing records")
+        parser.add_argument("finish", type=int, help="The absolute index at which to stop printing records")
+        parser.add_argument("-u", "--unpack", default=True, action='store_false', help="Whether or not to unpack binary bases")
+
+    def distributed_capability(self):
+        return False
 
     def output_dtypes(self):
         return []
     def output_shapes(self):
         return []
+
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two 
         things: a list of tensors which the runtime will 
@@ -25,16 +36,9 @@ class DisplayService(Service):
 
         return [], run_once
 
-display_service_ = DisplayService()
-
-def service():
-    return display_service_
-
 def run(args):
 
-  with open(args.dataset, 'r') as j:
-    dataset_params = json.load(j)
-
+  dataset_params = args.dataset
   records = dataset_params['records']
   first_record = records[0]
   chunk_size = first_record["last"] - first_record["first"]

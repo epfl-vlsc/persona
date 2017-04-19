@@ -34,22 +34,27 @@ def get_args(modules):
 
   parser = argparse.ArgumentParser()
 
-  subparsers = parser.add_subparsers(help="Available modes", dest="mode")
+  subparsers = parser.add_subparsers(help="Available modules; use $ persona <command> -h for details")
 
-  local_subparser = subparsers.add_parser("local", help="Run Personal locally")
+  #local_subparser = subparsers.add_parser("local", help="Run Personal locally")
 
-  local_subparsers = local_subparser.add_subparsers(help="Available modules; use $ persona <command> -h for details", dest="local")
+  #local_subparsers = local_subparser.add_subparsers(help="Available modules; use $ persona <command> -h for details", dest="local")
 
   # have each submodule define its own args
   for name, mod in modules.items():
     helpmsg = mod.get_tooltip()
-    module_subparser = local_subparsers.add_parser(name, help=helpmsg, parents=[parent_parser])
-    module_subparsers = module_subparser.add_subparsers(help="Available services",dest="service")
-    for module_service in mod.get_services():
-      service_shortname = module_service.get_shortname()
-      service_parser = module_subparsers.add_parser(service_shortname)
-      module_service.add_graph_args(parser=service_parser)
-      module_service.add_run_args(parser=service_parser)
+    module_subparser = subparsers.add_parser(name, help=helpmsg, parents=[parent_parser])
+    if len(mod.get_services()) is 1:
+      module_service = mod.get_services()[0]
+      module_service.add_graph_args(parser=module_subparser)
+      module_service.add_run_args(parser=module_subparser)
+    else:
+      module_subparsers = module_subparser.add_subparsers(help="Available services",dest="service")
+      for module_service in mod.get_services():
+        service_shortname = module_service.get_shortname()
+        service_parser = module_subparsers.add_parser(service_shortname)
+        module_service.add_graph_args(parser=service_parser)
+        module_service.add_run_args(parser=service_parser)
     module_subparser.set_defaults(func=local_runtime.execute)
 
   # TODO args and implementation for distributed execution
