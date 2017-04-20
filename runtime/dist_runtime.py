@@ -23,6 +23,9 @@ def execute(args, modules):
     # there is only one service if the args does not have .service
     service = module.get_services()[0]
 
+  if not service.distributed_capability():
+    raise Exception("Service {} does not support distributed execution".format(args.service))
+
   task_index = args.task_index
   run_arguments = tuple(service.extract_run_args(args=args))
   input_dtypes = service.input_dtypes()
