@@ -37,6 +37,7 @@ def get_args(modules):
   subparsers = parser.add_subparsers(help="Available modules; use $ persona <command> -h for details", dest='command')
 
   # have each submodule define its own args
+  # this is all for local execution
   for name, mod in modules.items():
     helpmsg = mod.get_tooltip()
     module_subparser = subparsers.add_parser(name, help=helpmsg, parents=[parent_parser])
@@ -54,7 +55,30 @@ def get_args(modules):
     module_subparser.set_defaults(func=local_runtime.execute)
 
   # TODO args and implementation for distributed execution
-  # dist_subparser = subparsers.add_parser("dist", help="Run a Persona job on an existing cluster")
+  dist_subparser = subparsers.add_parser("dist", help="Run a TF server and execute a service pulling from shared queues. Not normally called directly.")
+  #dist_subparser = subparsers.add_parser("dist", add_help=False)
+  dist_subparsers = dist_subparser.add_subparsers(help="Dist modules:", dest='dist_command')
+
+  for name, mod in modules.items():
+    helpmsg = mod.get_tooltip()
+    module_subparser = dist_subparsers.add_parser(name, help=helpmsg)
+    if len(mod.get_services()) is 1:
+      module_service = mod.get_services()[0]
+      module_service.add_graph_args(parser=module_subparser)
+      module_subparser.add_argument("-T", "--task-index", type=int, required=True, help="TF Cluster task index")
+      module_subparser.add_argument("-C", "--cluster-def", required=True, nargs='+', help="TF Cluster definition")
+      #module_service.add_run_args(parser=module_subparser)
+    else:
+      module_subparsers = module_subparser.add_subparsers(help="Available services in module: ", dest="service")
+      for module_service in mod.get_services():
+        service_shortname = module_service.get_shortname()
+        service_parser = module_subparsers.add_parser(service_shortname)
+        module_service.add_graph_args(parser=service_parser)
+        service_parser.add_argument("-T", "--task-index", type=int, required=True, help="TF Cluster task index")
+        service_parser.add_argument("-C", "--cluster-def", required=True, nargs='+', help="TF Cluster definition")
+        #module_service.add_run_args(parser=service_parser)
+    #module_subparser.set_defaults(func=local_runtime.execute)
+
   # setup_subparser = subparsers.add_parser("serve", help="Serve a Persona service on a cluster")
 
   args = parser.parse_args()
@@ -75,5 +99,6 @@ if __name__ == "__main__":
   else:
     modules = load_modules()
     args = get_args(modules)
+    print(args)
     print(os.getpid())
     args.func(args, modules)
