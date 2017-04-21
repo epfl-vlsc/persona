@@ -1,7 +1,28 @@
-import multiprocessing
-from . import persona_bwa
-from ..common import parse
+from . import bwa_align
+from ..common import service
 
+class CephBWASingleton(service.ServiceSingleton):
+  class_type = bwa_align.CephBWAService
+
+class LocalBWASingleton(service.ServiceSingleton):
+  class_type = bwa_align.LocalBWAService
+
+_singletons = [ CephBWASingleton(), LocalBWASingleton() ]
+_service_map = { a.get_shortname(): a for a in _singletons }
+
+def get_tooltip():
+  return "Alignment using the BWA aligner"
+
+def get_services():
+  return _singletons
+
+def lookup_service(name):
+  return _service_map[name]
+
+
+
+
+"""
 def get_service():
   return persona_bwa.service()
 
@@ -31,3 +52,5 @@ def get_graph_args(subparser):
 
 def get_run_args(subparser):
   parse.add_dataset(subparser)
+"""
+

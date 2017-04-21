@@ -13,6 +13,7 @@ from tensorflow.contrib.persona import queues, pipeline
 
 class SnapCommonService(Service):
     columns = ["base", "qual"]
+    write_columns = []
 
     def extract_run_args(self, args):
         dataset = args.dataset
@@ -36,6 +37,11 @@ class SnapCommonService(Service):
         parser.add_argument("--snap-args", type=str, default="", help="SNAP algorithm specific args. Pass with enclosing \" \". E.g. \"-om 5 -omax 1\" . See SNAP documentation for all options.")
 
     def make_central_pipeline(self, args, input_gen, pass_around_gen):
+        
+        self.write_columns.append('results')
+        for i in range(args.max_secondary):
+            self.write_columns.append('secondary{}'.format(i))
+
         joiner = tuple(tuple(a) + tuple(b) for a,b in zip(input_gen, pass_around_gen))
         ready_to_process = pipeline.join(upstream_tensors=joiner,
                                          parallel=args.parallel,
@@ -224,7 +230,7 @@ class LocalSnapService(LocalCommonService):
                                                                       pass_around_gen=pass_around_gen))
 
         to_writer_gen = tuple((buffer_list_handle, record_id, first_ordinal, num_records, file_basename) for buffer_list_handle, num_records, first_ordinal, record_id, file_basename in aligner_results)
-        written_records = tuple(tuple(a) for a in pipeline.local_write_pipeline(upstream_tensors=to_writer_gen))
+        written_records = tuple(tuple(a) for a in pipeline.local_write_pipeline(upstream_tensors=to_writer_gen, record_types=self.write_columns))
         final_output_gen = zip(written_records, ((record_id, first_ordinal, num_records, file_basename) for _, num_records, first_ordinal, record_id, file_basename in aligner_results))
         return (b+(a,) for a,b in final_output_gen), run_first
 
