@@ -33,6 +33,7 @@ class SnapCommonService(Service):
         parser.add_argument("--paired", default=False, action='store_true', help="interpret dataset as interleaved paired dataset")
         parser.add_argument("--summary", default=False, action="store_true", help="Add TensorFlow summary info to the graph")
         parser.add_argument("-i", "--index-path", type=path_exists_checker(), default="/scratch/stuart/ref_index", help="location of the ref index on all machines. Make sure all machines have this path!")
+        parser.add_argument("--snap-args", type=str, default="", help="SNAP algorithm specific args. Pass with enclosing \" \". E.g. \"-om 5 -omax 1\" . See SNAP documentation for all options.")
 
     def make_central_pipeline(self, args, input_gen, pass_around_gen):
         joiner = tuple(tuple(a) + tuple(b) for a,b in zip(input_gen, pass_around_gen))
@@ -65,10 +66,10 @@ class SnapCommonService(Service):
 
         if args.paired:
             aligner_type = persona_ops.snap_align_paired
-            aligner_options = persona_ops.paired_aligner_options(cmd_line="-o output.sam".split(), name="paired_aligner_options")
+            aligner_options = persona_ops.paired_aligner_options(cmd_line=args.snap_args.split(), name="paired_aligner_options")
         else:
             aligner_type = persona_ops.snap_align_single
-            aligner_options = persona_ops.aligner_options(cmd_line="-o output.sam".split(), name="aligner_options") # -o output.sam will not actually do anything
+            aligner_options = persona_ops.aligner_options(cmd_line=args.snap_args.split(), name="aligner_options") # -o output.sam will not actually do anything
 
         first_assembled_result = ready_to_align[0][1:]
         sink_queue_shapes = [a.get_shape() for a in first_assembled_result]
