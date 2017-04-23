@@ -105,6 +105,6 @@ if __name__ == "__main__":
   else:
     modules = load_modules()
     args = get_args(modules)
-    print(args)
-    print(os.getpid())
+    #print(args)
+    #print(os.getpid())
     args.func(args, modules)

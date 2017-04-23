@@ -33,7 +33,8 @@ def execute(args, modules):
   # TODO currently we assume all the service_ops are the same
   service_ops, service_init_ops = service.make_graph(in_queue=in_queue,
                                                      args=args)
-  service_ops = tuple(service_ops)
+  if not isinstance(service_ops, list):
+      service_ops = list(service_ops)
   assert len(service_ops) + len(service_init_ops) > 0
 
   init_ops = [tf.global_variables_initializer(), tf.local_variables_initializer()]
@@ -45,7 +46,7 @@ def execute(args, modules):
   results = []
   with tf.Session() as sess:
       if summary:
-          trace_dir = setup_output_dir(dirname=args.local + "_summary")
+          trace_dir = setup_output_dir(dirname=args.command + "_summary")
           service_ops.append(merged)
           summary_writer = tf.summary.FileWriter(trace_dir, graph=sess.graph, max_queue=2**20, flush_secs=10**4)
 
@@ -56,14 +57,14 @@ def execute(args, modules):
 
       # its possible the service is a simple run once
       if len(service_ops) > 0:
-          service_sink = pipeline.join(upstream_tensors=service_ops, capacity=8, parallel=1, multi=True)[0]
+          #service_sink = pipeline.join(upstream_tensors=service_ops, capacity=8, parallel=1, multi=True)[0]
           coord = tf.train.Coordinator()
           print("Local executor starting {} ...".format(args.command))
           threads = tf.train.start_queue_runners(coord=coord, sess=sess)
           while not coord.should_stop():
               try:
-                  print("Running round {}".format(count))
-                  result = sess.run(service_sink)
+                  #print("Running round {}".format(count))
+                  result = sess.run(service_ops)
                   count += 1
                   if summary:
                       results.append(result[:-1])
@@ -71,10 +72,10 @@ def execute(args, modules):
                   else:
                       results.append(result)
               except tf.errors.OutOfRangeError:
-                  print('Got out of range error!')
+                  #print('Got out of range error!')
                   break
-          print("Coord requesting stop")
+          print("Local executor finishing ...")
           coord.request_stop()
           coord.join(threads, stop_grace_period_secs=10)
 
-      # service.on_finish(results)
+          service.on_finish(args, results)
