@@ -59,7 +59,6 @@ class ImportFastqService(Service):
         parser.add_argument("-w", "--write", default=1, type=numeric_min_checker(1, "write parallelism"), help="number of parallel writers")
         parser.add_argument("--summary", default=False, action='store_true', help="run with tensorflow summary nodes")
         parser.add_argument("--paired", default=False, action='store_true', help="interpret fastq files as paired, requires an even number of files for positional args fastq_files")
-        parser.add_argument("--compress", default=False, action='store_true', help="compress output blocks")
         parser.add_argument("--compress-parallel", default=1, type=numeric_min_checker(1, "compress parallelism"), help="number of parallel compression pipelines")
         parser.add_argument("fastq_files", nargs="+", help="the fastq file to convert")
 
@@ -108,8 +107,9 @@ class ImportFastqService(Service):
         converters = list(conversion_pipeline(queued_fastq=reader, chunk_size=args.chunk, 
                 convert_parallelism=args.parallel_conversion, args=args))
 
+        compressors = list(compress_pipeline(converters=converters, compress_parallelism=args.compress_parallel))
 
-        writers = list(writer_pipeline(converters, args.write, args.name, self.outdir))
+        writers = list(writer_pipeline(compressors, args.write, args.name, self.outdir))
         final = pipeline.join(upstream_tensors=writers, capacity=8, parallel=1, multi=True)[0]
 
         return final, []
@@ -144,31 +144,47 @@ def read_pipeline(fastq_file, args):
         queued_results = pipeline.join(reader, parallel=1, capacity=2)
     return queued_results[0]
 
-def writer_pipeline(converters, write_parallelism, record_id, output_dir):
-    prefix_name = tf.Variable("{}_".format(record_id), dtype=dtypes.string, name="prefix_string")
-    converted_batch = pipeline.join(converters, parallel=write_parallelism, capacity=8, multi=True)
+def compress_pipeline(converters, compress_parallelism):
+    converted_batch = pipeline.join(converters, parallel=compress_parallelism, capacity=8, multi=True)
 
-    for base, qual, meta, first_ordinal, num_recs in converted_batch:
+    buf_pool = persona_ops.buffer_pool(size=0, bound=False, name="bufpool")
+
+    for base, qual, meta, first_ord, num_recs in converted_batch:
+        base_buf = persona_ops.buffer_pair_compressor(buffer_pool=buf_pool, buffer_pair=base)
+        qual_buf = persona_ops.buffer_pair_compressor(buffer_pool=buf_pool, buffer_pair=qual)
+        meta_buf = persona_ops.buffer_pair_compressor(buffer_pool=buf_pool, buffer_pair=meta)
+
+        yield base_buf, qual_buf, meta_buf, first_ord, num_recs
+
+
+def writer_pipeline(compressors, write_parallelism, record_id, output_dir):
+    prefix_name = tf.Variable("{}_".format(record_id), dtype=dtypes.string, name="prefix_string")
+    compressed_batch = pipeline.join(compressors, parallel=write_parallelism, capacity=8, multi=True)
+
+    for base, qual, meta, first_ordinal, num_recs in compressed_batch:
         first_ord_as_string = string_ops.as_string(first_ordinal, name="first_ord_as_string")
         base_key = string_ops.string_join([output_dir, prefix_name, first_ord_as_string, ".base"], name="base_key_string")
         qual_key = string_ops.string_join([output_dir, prefix_name, first_ord_as_string, ".qual"], name="qual_key_string")
         meta_key = string_ops.string_join([output_dir, prefix_name, first_ord_as_string, ".metadata"], name="metadata_key_string")
-        base_path = persona_ops.agd_file_system_buffer_pair_writer(record_id=record_id,
+        base_path = persona_ops.agd_file_system_buffer_writer(record_id=record_id,
                                                      record_type="raw",
                                                      resource_handle=base,
                                                      path=base_key,
+                                                     compressed=True,
                                                      first_ordinal=first_ordinal,
                                                      num_records=tf.to_int32(num_recs))
-        qual_path = persona_ops.agd_file_system_buffer_pair_writer(record_id=record_id,
+        qual_path = persona_ops.agd_file_system_buffer_writer(record_id=record_id,
                                                      record_type="raw",
                                                      resource_handle=qual,
                                                      path=qual_key,
+                                                     compressed=True,
                                                      first_ordinal=first_ordinal,
                                                      num_records=tf.to_int32(num_recs))
-        meta_path = persona_ops.agd_file_system_buffer_pair_writer(record_id=record_id,
+        meta_path = persona_ops.agd_file_system_buffer_writer(record_id=record_id,
                                                      record_type="raw",
                                                      resource_handle=meta,
                                                      path=meta_key,
+                                                     compressed=True,
                                                      first_ordinal=first_ordinal,
                                                      num_records=tf.to_int32(num_recs))
         yield base_path, qual_path, meta_path, first_ordinal, num_recs

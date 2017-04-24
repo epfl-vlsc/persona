@@ -67,8 +67,10 @@ def run(args):
   finish = tf.constant(args.finish, dtype=tf.int32)
   names = tf.constant(chunknames)
   size = tf.constant(chunk_size)
-  output = persona_ops.agd_output(path=path, chunk_names=names, chunk_size=size, 
-      start=start, finish=finish, columns=['metadata', 'base', 'qual', 'results', 'secondary0'])
+  columns = dataset_params['columns']
+  print(columns)
+  output = persona_ops.agd_output(path=path, chunk_names=names, chunk_size=size, unpack=args.unpack,
+      start=start, finish=finish, columns=columns)
 
   return [output]
 
