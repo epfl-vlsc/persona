@@ -125,7 +125,9 @@ class ImportFastqService(Service):
                 'path': name,
                 'last': first_ordinal + num_records
             })
-        self.output_records = sorted(self.output_records, key=lambda rec: rec['path'])
+        self.output_records = sorted(self.output_records, key=lambda rec: int(rec['first']))
+        # reset with the sorted, i think it makes a copy?
+        self.output_metadata['records'] = self.output_records
         with open(self.outdir + args.name + '.metadata', 'w+') as f:
             json.dump(self.output_metadata, f, indent=4)
 
@@ -142,7 +144,7 @@ def read_pipeline(fastq_file, args):
     else:
         reader = persona_ops.file_m_map(filename=fastq_file, pool_handle=mapped_file_pool,
                                  synchronous=False, name="file_map")
-        queued_results = pipeline.join(reader, parallel=1, capacity=2)
+        queued_results = pipeline.join([reader], parallel=1, capacity=2)
     return queued_results[0]
 
 def compress_pipeline(converters, compress_parallelism):
