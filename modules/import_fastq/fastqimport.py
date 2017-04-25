@@ -125,6 +125,7 @@ class ImportFastqService(Service):
                 'path': name,
                 'last': first_ordinal + num_records
             })
+        self.output_records = sorted(self.output_records, key=lambda rec: rec['path'])
         with open(self.outdir + args.name + '.metadata', 'w+') as f:
             json.dump(self.output_metadata, f, indent=4)
 
