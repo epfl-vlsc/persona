@@ -128,7 +128,7 @@ class ImportFastqService(Service):
         self.output_records = sorted(self.output_records, key=lambda rec: int(rec['first']))
         # reset with the sorted, i think it makes a copy?
         self.output_metadata['records'] = self.output_records
-        with open(self.outdir + args.name + '.metadata', 'w+') as f:
+        with open(self.outdir + args.name + '_metadata.json', 'w+') as f:
             json.dump(self.output_metadata, f, indent=4)
 
 def read_pipeline(fastq_file, args):
