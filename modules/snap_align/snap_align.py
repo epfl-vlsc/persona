@@ -42,6 +42,8 @@ class SnapCommonService(Service):
         for i in range(args.max_secondary):
             self.write_columns.append('secondary{}'.format(i))
 
+        self.write_columns = [ {"type": "structured", "extension": a} for a in self.write_columns]
+
         joiner = tuple(tuple(a) + tuple(b) for a,b in zip(input_gen, pass_around_gen))
         ready_to_process = pipeline.join(upstream_tensors=joiner,
                                          parallel=args.parallel,
