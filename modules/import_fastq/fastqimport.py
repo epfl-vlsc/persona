@@ -161,7 +161,7 @@ def compress_pipeline(converters, compress_parallelism):
 
 
 def writer_pipeline(compressors, write_parallelism, record_id, output_dir):
-    prefix_name = tf.Variable("{}_".format(record_id), dtype=dtypes.string, name="prefix_string")
+    prefix_name = tf.constant("{}_".format(record_id), name="prefix_string")
     compressed_batch = pipeline.join(compressors, parallel=write_parallelism, capacity=8, multi=True)
 
     for base, qual, meta, first_ordinal, num_recs in compressed_batch:
@@ -170,21 +170,21 @@ def writer_pipeline(compressors, write_parallelism, record_id, output_dir):
         qual_key = string_ops.string_join([output_dir, prefix_name, first_ord_as_string, ".qual"], name="qual_key_string")
         meta_key = string_ops.string_join([output_dir, prefix_name, first_ord_as_string, ".metadata"], name="metadata_key_string")
         base_path = persona_ops.agd_file_system_buffer_writer(record_id=record_id,
-                                                     record_type="raw",
+                                                     record_type="base_compact",
                                                      resource_handle=base,
                                                      path=base_key,
                                                      compressed=True,
                                                      first_ordinal=first_ordinal,
                                                      num_records=tf.to_int32(num_recs))
         qual_path = persona_ops.agd_file_system_buffer_writer(record_id=record_id,
-                                                     record_type="raw",
+                                                     record_type="text",
                                                      resource_handle=qual,
                                                      path=qual_key,
                                                      compressed=True,
                                                      first_ordinal=first_ordinal,
                                                      num_records=tf.to_int32(num_recs))
         meta_path = persona_ops.agd_file_system_buffer_writer(record_id=record_id,
-                                                     record_type="raw",
+                                                     record_type="text",
                                                      resource_handle=meta,
                                                      path=meta_key,
                                                      compressed=True,
