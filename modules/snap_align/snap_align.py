@@ -94,8 +94,7 @@ class SnapCommonService(Service):
         buffer_list_pool = persona_ops.buffer_list_pool(**pipeline.pool_default_args)
         genome = persona_ops.genome_index(genome_location=args.index_path, name="genome_loader")
 
-        single_executor = persona_ops.snap_single_executor(max_secondary=args.max_secondary,
-                                                           num_threads=args.aligner_threads,
+        single_executor = persona_ops.snap_single_executor(num_threads=args.aligner_threads,
                                                            work_queue_size=args.aligners+1,
                                                            options_handle=aligner_options,
                                                            genome_handle=genome)
