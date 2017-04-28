@@ -54,7 +54,7 @@ class Service:
 
     def on_finish(self, args, results):
         """ Called by runtime when execution finished """
-        raise NotImplementedError
+        pass
 
 class ServiceSingleton:
     """ A class to wrap a service up to make a singleton instance.
