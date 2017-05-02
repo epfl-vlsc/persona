@@ -154,7 +154,7 @@ class CephSnapService(CephCommonService):
         :param args: 
         :return: [ key, pool_name, num_records, first_ordinal, record_id, full_path ]
         """
-        parallel_key_dequeue = (in_queue.dequeue() for _ in range(args.enqueue))
+        parallel_key_dequeue = (tf.unstack(in_queue.dequeue()) for _ in range(args.enqueue))
         # parallel_key_dequeue = [(key, pool_name) x N]
         ceph_read_buffers = tuple(pipeline.ceph_read_pipeline(upstream_tensors=parallel_key_dequeue,
                                                               user_name=args.ceph_user_name,
@@ -165,10 +165,10 @@ class CephSnapService(CephCommonService):
         to_central_gen = (a[2] for a in ceph_read_buffers) # [ chunk_buffer_handles x N ]
 
         # aligner_results: [(buffer_list_result, (num_records, first_ordinal, record_id), (key, pool_name)) x N]
-        aligner_results = self.make_central_pipeline(args=args,
-                                                     input_gen=to_central_gen,
-                                                     pass_around_gen=pass_around_central_gen)
-        to_writer_gen = ((key, pool_name, num_records, first_ordinal, record_id, buffer_list_ref) for buffer_list_ref, (num_records, first_ordinal, record_id), (key, pool_name) in aligner_results)
+        aligner_results, run_first = self.make_central_pipeline(args=args,
+                                                                input_gen=to_central_gen,
+                                                                pass_around_gen=pass_around_central_gen)
+        to_writer_gen = ((key, pool_name, num_records, first_ordinal, record_id, buffer_list_ref) for buffer_list_ref, num_records, first_ordinal, record_id, key, pool_name in aligner_results)
 
         # ceph writer pipeline wants (key, first_ord, num_recs, pool_name, record_id, column_handle)
 
@@ -180,8 +180,9 @@ class CephSnapService(CephCommonService):
             cluster_name=args.ceph_cluster_name,
             ceph_conf_path=args.ceph_conf_path
         )
-        return (b+(a,) for a,b in zip(writer_outputs, ((key, pool_name, num_records, first_ordinal, record_id)
-                                                       for _, (num_records, first_ordinal, record_id), (key, pool_name) in aligner_results)))
+        output_tensors = (b+(a,) for a,b in zip(writer_outputs, ((key, pool_name, num_records, first_ordinal, record_id)
+                                                       for _, num_records, first_ordinal, record_id, key, pool_name in aligner_results)))
+        return output_tensors, run_first
 
 
 class CephNullService(CephCommonService):
