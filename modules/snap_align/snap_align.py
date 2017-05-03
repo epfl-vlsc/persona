@@ -115,7 +115,7 @@ class SnapCommonService(Service):
             to_compressors = (a[0] for a in aligner_results)
             around_compressors = (a[1:] for a in aligner_results)
             compressed_buffers = pipeline.aligner_compress_pipeline(upstream_tensors=to_compressors)
-            after_compression = ((a,)+b for a,b in zip(compressed_buffers, around_compressors))
+            after_compression = ((a,)+tuple(b) for a,b in zip(compressed_buffers, around_compressors))
             aligners = tuple(after_compression)
 
         aligned_results = pipeline.join(upstream_tensors=aligners, parallel=args.writers,
