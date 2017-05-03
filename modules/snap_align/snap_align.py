@@ -28,7 +28,8 @@ class SnapCommonService(Service):
         parser.add_argument("-t", "--aligner-threads", type=numeric_min_checker(1, "threads per aligner"), default=multiprocessing.cpu_count(), help="the number of threads to use per aligner")
         parser.add_argument("-x", "--subchunking", type=numeric_min_checker(1, "don't go lower than 100 for subchunking size"), default=5000, help="the size of each subchunk (in number of reads)")
         parser.add_argument("-w", "--writers", type=numeric_min_checker(0, "must have a non-negative number of writers"), default=1, help="the number of writer pipelines")
-        #parser.add_argument("-c", "--compress", default=False, action='store_true', help="compress the output")
+        parser.add_argument("-c", "--compress", default=False, action='store_true', help="compress the output")
+        parser.add_argument("--compress-parallel", default=1, type=numeric_min_checker(1, "must have at least one parallel compressor"), help="the parallelism for the output compression pipeline, if set")
         parser.add_argument("-s", "--max-secondary", type=numeric_min_checker(0, "must have a non-negative number of secondary results"), default=0, help="Max secondary results to store. >= 0 ")
         parser.add_argument("--deep-verify", default=False, action='store_true', help="verify record integrity")
         parser.add_argument("--paired", default=False, action='store_true', help="interpret dataset as interleaved paired dataset")
@@ -108,7 +109,17 @@ class SnapCommonService(Service):
                 yield (aligner_results,) + tuple(pass_around)
 
         aligners = tuple(make_aligners())
-        aligned_results = pipeline.join(upstream_tensors=aligners, parallel=args.writers, multi=True, capacity=32)
+        # aligners: [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
+        if args.compress:
+            aligner_results = pipeline.join(upstream_tensors=aligners, parallel=args.compress_parallel, multi=True, capacity=32)
+            to_compressors = (a[0] for a in aligner_results)
+            around_compressors = (a[1:] for a in aligner_results)
+            compressed_buffers = pipeline.aligner_compress_pipeline(upstream_tensors=to_compressors)
+            after_compression = ((a,)+b for a,b in zip(compressed_buffers, around_compressors))
+            aligners = tuple(after_compression)
+
+        aligned_results = pipeline.join(upstream_tensors=aligners, parallel=args.writers,
+                                        multi=True, capacity=32)
         return aligned_results, (genome,) # returns [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
 
 class CephCommonService(SnapCommonService):
@@ -168,17 +179,17 @@ class CephSnapService(CephCommonService):
         aligner_results, run_first = self.make_central_pipeline(args=args,
                                                                 input_gen=to_central_gen,
                                                                 pass_around_gen=pass_around_central_gen)
+
         to_writer_gen = ((key, pool_name, num_records, first_ordinal, record_id, buffer_list_ref) for buffer_list_ref, num_records, first_ordinal, record_id, key, pool_name in aligner_results)
-
         # ceph writer pipeline wants (key, first_ord, num_recs, pool_name, record_id, column_handle)
-
         # type of aligned_results_queue: [(key, pool_name, num_records, first_ordinal, record_id, buffer_list_ref) x N]
         # this happens to match the iterator in ceph_aligner_write_pipeline, but otherwise you can mix like above
         writer_outputs = pipeline.ceph_aligner_write_pipeline(
             upstream_tensors=to_writer_gen,
             user_name=args.ceph_user_name,
             cluster_name=args.ceph_cluster_name,
-            ceph_conf_path=args.ceph_conf_path
+            ceph_conf_path=args.ceph_conf_path,
+            compressed=args.compress
         )
         output_tensors = (b+(a,) for a,b in zip(writer_outputs, ((key, pool_name, num_records, first_ordinal, record_id)
                                                        for _, num_records, first_ordinal, record_id, key, pool_name in aligner_results)))
