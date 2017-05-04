@@ -193,16 +193,16 @@ def writer_pipeline(compressors, write_parallelism, record_id, output_dir):
         yield base_path, qual_path, meta_path, first_ordinal, num_recs
 
 def conversion_pipeline(queued_fastq, chunk_size, convert_parallelism, args):
-    if not args.paired:
+    if args.paired:
         q = data_flow_ops.FIFOQueue(capacity=32, # big because who cares
-                                dtypes=[dtypes.string, dtypes.int64, dtypes.int64],
-                                shapes=[tensor_shape.vector(2), tensor_shape.scalar(), tensor_shape.scalar()],
-                                name="chunked_output_queue")
+                                    dtypes=[dtypes.string, dtypes.string, dtypes.int64, dtypes.int64],
+                                    shapes=[tensor_shape.vector(2), tensor_shape.vector(2), tensor_shape.scalar(), tensor_shape.scalar()],
+                                    name="chunked_output_queue")
     else:
         q = data_flow_ops.FIFOQueue(capacity=32, # big because who cares
-                                dtypes=[dtypes.string, dtypes.string, dtypes.int64, dtypes.int64],
-                                shapes=[tensor_shape.vector(2), tensor_shape.vector(2), tensor_shape.scalar(), tensor_shape.scalar()],
-                                name="chunked_output_queue")
+                                    dtypes=[dtypes.string, dtypes.int64, dtypes.int64],
+                                    shapes=[tensor_shape.vector(2), tensor_shape.scalar(), tensor_shape.scalar()],
+                                    name="chunked_output_queue")
 
     fastq_read_pool = persona_ops.fastq_read_pool(size=0, bound=False, name="fastq_read_pool")
 
