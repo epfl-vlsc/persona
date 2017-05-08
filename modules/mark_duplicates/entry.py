@@ -1,17 +1,18 @@
 from . import agd_mark_duplicates
-from ..common.parse import numeric_min_checker
+from ..common import service
 
 def get_tooltip():
   return "Mark PCR duplicate reads in an aligned AGD dataset."
 
-def get_service():
-    return agd_mark_duplicates.service()
+class MarkDuplicatesSingleton(service.ServiceSingleton):
+  class_type = agd_mark_duplicates.MarkDuplicatesService
+
+
+_singletons = [ MarkDuplicatesSingleton() ]
+_service_map = { a.get_shortname(): a for a in _singletons }
 
 def get_services():
-    return []
+  return _singletons
 
-def get_args(subparser):
-  subparser.add_argument("-p", "--parse-parallel", default=1, type=numeric_min_checker(minimum=1, message="read parallelism"),
-                      help="total paralellism level for reading data from disk")
-  subparser.add_argument("-w", "--write-parallel", default=1, help="number of writers to use",
-                      type=numeric_min_checker(minimum=1, message="number of writers min"))
+def lookup_service(name):
+  return _service_map[name]

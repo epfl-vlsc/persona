@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import os
+import json
 import multiprocessing
 from ..common.service import Service
 from ..common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
@@ -217,6 +218,21 @@ class LocalCommonService(SnapCommonService):
     def add_run_args(self, parser):
         super().add_run_args(parser=parser)
         parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), required=True, help="Directory containing ALL of the chunk files")
+    
+    def on_finish(self, args, results):
+        # add results column to metadata
+        columns = args.dataset['columns']
+        columns.append('results')
+        args.dataset['columns'] = columns
+        for f in os.listdir(args.dataset_dir):
+            if f.endswith(".json"):
+                metafile = f
+        #print(metafile)
+        #import ipdb; ipdb.set_trace()
+        print(args.dataset)
+        with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
+            json.dump(args.dataset, f, indent=4)
+
 
 class LocalSnapService(LocalCommonService):
     """ A service to use the SNAP aligner with a local dataset """
@@ -243,7 +259,7 @@ class LocalSnapService(LocalCommonService):
                                                                       pass_around_gen=pass_around_gen))
 
         to_writer_gen = tuple((buffer_list_handle, record_id, first_ordinal, num_records, file_basename) for buffer_list_handle, num_records, first_ordinal, record_id, file_basename in aligner_results)
-        written_records = tuple(tuple(a) for a in pipeline.local_write_pipeline(upstream_tensors=to_writer_gen, record_types=self.write_columns))
+        written_records = tuple(tuple(a) for a in pipeline.local_write_pipeline(upstream_tensors=to_writer_gen, compressed=args.compress, record_types=self.write_columns))
         final_output_gen = zip(written_records, ((record_id, first_ordinal, num_records, file_basename) for _, num_records, first_ordinal, record_id, file_basename in aligner_results))
         return (b+(a,) for a,b in final_output_gen), run_first
 
