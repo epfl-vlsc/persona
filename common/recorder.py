@@ -5,7 +5,6 @@ import spur
 import sys
 import multiprocessing.pool
 import signal
-import json
 import getpass
 import shlex
 
@@ -57,18 +56,14 @@ class UsageRecorder:
         while not self.stop_event.is_set() and self.process.is_running():
             self._append_instance()
             time.sleep(self.interval)
-        if "stop_time" not in self.meta_dict:
-            self.meta_dict["stop_time"] = time.time()
-        if "runtime" not in self.meta_dict:
-            self.meta_dict["runtime"] = time.perf_counter() - self.start_clock
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.meta_dict["stop_time"] = time.time()
         self.meta_dict["runtime"] = time.perf_counter() - self.start_clock
-        self.meta_dict["samples"] = self.event_list
-        self.event_list = [] # in case this gets called again
         self.stop_event.set()
         self.thread.join()
+        self.meta_dict["samples"] = self.event_list
+        self.event_list = [] # in case this gets called again
 
 class RemoteRecorder:
 

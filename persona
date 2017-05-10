@@ -53,6 +53,7 @@ def get_args(modules):
         service_parser = module_subparsers.add_parser(service_shortname)
         module_service.add_graph_args(parser=service_parser)
         module_service.add_run_args(parser=service_parser)
+        local_runtime.add_default_module_args(parser=service_parser)
     module_subparser.set_defaults(func=local_runtime.execute)
 
   # TODO args and implementation for distributed execution
