@@ -135,11 +135,9 @@ class CephCommonService(SnapCommonService):
 
     def extract_run_args(self, args):
         dataset = args.dataset
-        pool_key = "ceph_pool" # TODO what is it actually?
-        if pool_key not in dataset:
-            raise Exception("key '{k}' not found in dataset keys {keys}".format(k=pool_key, keys=dataset.keys()))
-        ceph_pool = dataset[pool_key] # TODO might require fancier extraction
-        return ((a, ceph_pool) for a in super().extract_run_args(args=args))
+        namespace_key = "namespace"
+        namespace = dataset.get(namespace_key, "")
+        return ((a, namespace) for a in super().extract_run_args(args=args))
 
     def add_graph_args(self, parser):
         super().add_graph_args(parser=parser)
@@ -147,6 +145,7 @@ class CephCommonService(SnapCommonService):
         parser.add_argument("--ceph-user-name", type=non_empty_string_checker, default="client.dcsl1024", help="ceph username")
         parser.add_argument("--ceph-conf-path", type=path_exists_checker(check_dir=False), default="/etc/ceph/ceph.conf", help="path for the ceph configuration")
         parser.add_argument("--ceph-read-chunk-size", default=(2**26), type=numeric_min_checker(128, "must have a reasonably large minimum read size from Ceph"), help="minimum size to read from ceph storage, in bytes")
+        parser.add_argument("--ceph-pool-name", help="override the pool name to use (if specified or not in the json file")
 
 class CephSnapService(CephCommonService):
     """ A service to use the snap aligner with a ceph dataset """
@@ -164,36 +163,45 @@ class CephSnapService(CephCommonService):
         """
         :param in_queue: 
         :param args: 
-        :return: [ key, pool_name, num_records, first_ordinal, record_id, full_path ]
+        :return: [ key, namespace, num_records, first_ordinal, record_id, full_path ]
         """
+        if args.ceph_pool_name is None:
+            dataset = args.dataset
+            pool_key = "ceph_pool"
+            if pool_key not in dataset:
+                raise Exception("Please provide a dataset that has the pool specified with '{pk}', or specify with --ceph-pool-name when launching")
+            args.ceph_pool_name = dataset[pool_key]
+
         parallel_key_dequeue = (tf.unstack(in_queue.dequeue()) for _ in range(args.enqueue))
-        # parallel_key_dequeue = [(key, pool_name) x N]
+        # parallel_key_dequeue = [(key, namespace) x N]
         ceph_read_buffers = tuple(pipeline.ceph_read_pipeline(upstream_tensors=parallel_key_dequeue,
                                                               user_name=args.ceph_user_name,
                                                               cluster_name=args.ceph_cluster_name,
                                                               ceph_conf_path=args.ceph_conf_path,
+                                                              pool_name=args.ceph_pool_name,
                                                               columns=self.columns))
-        pass_around_central_gen = (a[:2] for a in ceph_read_buffers) # key, pool_name
+        pass_around_central_gen = (a[:2] for a in ceph_read_buffers) # key, namespace
         to_central_gen = (a[2] for a in ceph_read_buffers) # [ chunk_buffer_handles x N ]
 
-        # aligner_results: [(buffer_list_result, (num_records, first_ordinal, record_id), (key, pool_name)) x N]
+        # aligner_results: [(buffer_list_result, (num_records, first_ordinal, record_id), (key, namespace)) x N]
         aligner_results, run_first = self.make_central_pipeline(args=args,
                                                                 input_gen=to_central_gen,
                                                                 pass_around_gen=pass_around_central_gen)
 
-        to_writer_gen = ((key, pool_name, num_records, first_ordinal, record_id, buffer_list_ref) for buffer_list_ref, num_records, first_ordinal, record_id, key, pool_name in aligner_results)
-        # ceph writer pipeline wants (key, first_ord, num_recs, pool_name, record_id, column_handle)
-        # type of aligned_results_queue: [(key, pool_name, num_records, first_ordinal, record_id, buffer_list_ref) x N]
+        to_writer_gen = ((key, namespace, num_records, first_ordinal, record_id, buffer_list_ref) for buffer_list_ref, num_records, first_ordinal, record_id, key, namespace in aligner_results)
+        # ceph writer pipeline wants (key, first_ord, num_recs, namespace, record_id, column_handle)
+        # type of aligned_results_queue: [(key, namespace, num_records, first_ordinal, record_id, buffer_list_ref) x N]
         # this happens to match the iterator in ceph_aligner_write_pipeline, but otherwise you can mix like above
         writer_outputs = pipeline.ceph_aligner_write_pipeline(
             upstream_tensors=to_writer_gen,
             user_name=args.ceph_user_name,
             cluster_name=args.ceph_cluster_name,
             ceph_conf_path=args.ceph_conf_path,
-            compressed=args.compress
+            compressed=args.compress,
+            pool_name=args.ceph_pool_name
         )
-        output_tensors = (b+(a,) for a,b in zip(writer_outputs, ((key, pool_name, num_records, first_ordinal, record_id)
-                                                       for _, num_records, first_ordinal, record_id, key, pool_name in aligner_results)))
+        output_tensors = (b+(a,) for a,b in zip(writer_outputs, ((key, namespace, num_records, first_ordinal, record_id)
+                                                       for _, num_records, first_ordinal, record_id, key, namespace in aligner_results)))
         return output_tensors, run_first
 
 
