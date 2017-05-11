@@ -47,8 +47,6 @@ def execute(args, modules):
     service = module.get_services()[0]
     
   run_arguments = tuple(service.extract_run_args(args=args))
-  input_dtypes = service.input_dtypes()
-  input_shapes = service.input_shapes()
 
   in_queue = tf.train.input_producer(input_tensor=run_arguments, num_epochs=1, shuffle=False, capacity=len(run_arguments))
 
@@ -106,5 +104,8 @@ def execute(args, modules):
 
           service.on_finish(args, results)
   if record_stats:
+      params = vars(args)
+      del params["func"]
+      stats_results["params"] = vars(args)
       with open(create_unique_file(directory=stats_directory, prefix="runtime_stats", suffix=".json"), 'w+') as fl:
         json.dump(stats_results, fl)
