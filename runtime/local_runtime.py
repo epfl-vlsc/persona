@@ -15,6 +15,20 @@ def setup_output_dir(dirname="cluster_traces"):
     os.makedirs(trace_path)
     return trace_path
 
+def gen_unique_filename(prefix, suffix, start=0):
+    yield prefix+suffix
+    while True:
+        yield "{p}_{num}{suffix}".format(p=prefix, num=start, suffix=suffix)
+        start+=1
+
+def create_unique_file(directory, prefix, suffix, start=0):
+    if not os.path.isdir(directory):
+        raise Exception("Unable to create unique file in directory {}".format(directory))
+    flname_gen = (os.path.join(directory, a) for a in gen_unique_filename(prefix=prefix, suffix=suffix, start=start))
+    for filename in flname_gen:
+        if not os.path.exists(filename):
+            return filename
+
 def add_default_module_args(parser):
     parser.add_argument("--record", default=False, action='store_true', help="record usage of the running process")
     parser.add_argument("--record-directory", default=os.path.dirname(os.getcwd()), type=parse.path_exists_checker(), help="directory to store runtime statistics")
@@ -92,5 +106,5 @@ def execute(args, modules):
 
           service.on_finish(args, results)
   if record_stats:
-      with open(os.path.join(stats_directory, "runtime_stats.json"), 'w+') as fl:
+      with open(create_unique_file(directory=stats_directory, prefix="runtime_stats", suffix=".json"), 'w+') as fl:
         json.dump(stats_results, fl)
