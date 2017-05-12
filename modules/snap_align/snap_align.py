@@ -50,7 +50,7 @@ class SnapCommonService(Service):
         ready_to_process = pipeline.join(upstream_tensors=joiner,
                                          parallel=args.parallel,
                                          capacity=args.mmap_queue,
-                                         multi=True)
+                                         multi=True, name="ready_to_process")
         # need to unpack better here
         to_agd_reader, pass_around_agd_reader = zip(*((a[:2], a[2:]) for a in ready_to_process))
         multi_column_gen = pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=to_agd_reader)
@@ -63,7 +63,7 @@ class SnapCommonService(Service):
 
         processed_bufs = tuple(a for a in process_processed_bufs())
         ready_to_assemble = pipeline.join(upstream_tensors=processed_bufs,
-                                          parallel=1, capacity=32, multi=True) # TODO these params are kinda arbitrary :/
+                                          parallel=1, capacity=32, multi=True, name="ready_to_assemble") # TODO these params are kinda arbitrary :/
         # ready_to_assemble: [output_buffers, num_records, first_ordinal, record_id, pass_around {flattened}) x N]
         to_assembler, pass_around_assembler = zip(*((a[:2], a[1:]) for a in ready_to_assemble))
         # each item out of this is a handle to AGDReads
@@ -72,7 +72,7 @@ class SnapCommonService(Service):
         assembled_records_gen = tuple(zip(agd_read_assembler_gen, pass_around_assembler))
         assembled_records = tuple(((a,) + tuple(b)) for a,b in assembled_records_gen)
         ready_to_align = pipeline.join(upstream_tensors=assembled_records,
-                                       parallel=args.aligners, capacity=32, multi=True) # TODO still have default capacity here :/
+                                       parallel=args.aligners, capacity=32, multi=True, name="ready_to_align") # TODO still have default capacity here :/
 
         if args.paired:
             aligner_type = persona_ops.snap_align_paired
@@ -96,31 +96,31 @@ class SnapCommonService(Service):
         buffer_list_pool = persona_ops.buffer_list_pool(**pipeline.pool_default_args)
         genome = persona_ops.genome_index(genome_location=args.index_path, name="genome_loader")
 
-        single_executor = persona_ops.snap_single_executor(num_threads=args.aligner_threads,
-                                                           work_queue_size=args.aligners+1,
-                                                           options_handle=aligner_options,
-                                                           genome_handle=genome)
         def make_aligners():
+            single_executor = persona_ops.snap_single_executor(num_threads=args.aligner_threads,
+                                                               work_queue_size=args.aligners+1,
+                                                               options_handle=aligner_options,
+                                                               genome_handle=genome)
             for read_handle, pass_around in zip(pass_to_aligners, pass_around_aligners):
-                aligner_results = aligner_type(read=read_handle,
-                                               buffer_list_pool=buffer_list_pool,
-                                               subchunk_size=args.subchunking,
-                                               executor_handle=single_executor,
-                                               max_secondary=args.max_secondary)
+                aligner_results = persona_ops.snap_align_single(read=read_handle,
+                                                                buffer_list_pool=buffer_list_pool,
+                                                                subchunk_size=args.subchunking,
+                                                                executor_handle=single_executor,
+                                                                max_secondary=args.max_secondary)
                 yield (aligner_results,) + tuple(pass_around)
 
         aligners = tuple(make_aligners())
         # aligners: [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
         if args.compress:
-            aligner_results = pipeline.join(upstream_tensors=aligners, parallel=args.compress_parallel, multi=True, capacity=32)
-            to_compressors = (a[0] for a in aligner_results)
-            around_compressors = (a[1:] for a in aligner_results)
+            aligner_results_to_compress = pipeline.join(upstream_tensors=aligners, parallel=args.compress_parallel, multi=True, capacity=32, name="ready_to_compress")
+            to_compressors = (a[0] for a in aligner_results_to_compress)
+            around_compressors = (a[1:] for a in aligner_results_to_compress)
             compressed_buffers = pipeline.aligner_compress_pipeline(upstream_tensors=to_compressors)
             after_compression = ((a,)+tuple(b) for a,b in zip(compressed_buffers, around_compressors))
             aligners = tuple(after_compression)
 
         aligned_results = pipeline.join(upstream_tensors=aligners, parallel=args.writers,
-                                        multi=True, capacity=32)
+                                        multi=True, capacity=32, name="aligned_results")
         return aligned_results, (genome,) # returns [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
 
 class CephCommonService(SnapCommonService):
@@ -235,9 +235,6 @@ class LocalCommonService(SnapCommonService):
         for f in os.listdir(args.dataset_dir):
             if f.endswith(".json"):
                 metafile = f
-        #print(metafile)
-        #import ipdb; ipdb.set_trace()
-        print(args.dataset)
         with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
             json.dump(args.dataset, f, indent=4)
 

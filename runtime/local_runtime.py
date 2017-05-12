@@ -103,6 +103,7 @@ def execute(args, modules):
               coord.join(threads, stop_grace_period_secs=10)
 
           service.on_finish(args, results)
+  summary_writer.flush(); summary_writer.close()
   if record_stats:
       params = vars(args)
       del params["func"]
