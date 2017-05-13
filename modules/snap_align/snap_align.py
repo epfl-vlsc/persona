@@ -24,12 +24,12 @@ class SnapCommonService(Service):
         # adds the common args to all graphs
         parser.add_argument("-p", "--parallel", type=numeric_min_checker(1, "parallel decompression"), default=2, help="parallel decompression")
         parser.add_argument("-e", "--enqueue", type=numeric_min_checker(1, "parallel enqueuing"), default=1, help="parallel enqueuing / reading from Ceph")
-        parser.add_argument("-m", "--mmap-queue", type=numeric_min_checker(1, "mmap queue size"), default=2, help="size of the mmaped file record queue")
         parser.add_argument("-a", "--aligners", type=numeric_min_checker(1, "number of aligners"), default=1, help="number of aligners")
         parser.add_argument("-t", "--aligner-threads", type=numeric_min_checker(1, "threads per aligner"), default=multiprocessing.cpu_count(), help="the number of threads to use per aligner")
         parser.add_argument("-x", "--subchunking", type=numeric_min_checker(1, "don't go lower than 100 for subchunking size"), default=5000, help="the size of each subchunk (in number of reads)")
         parser.add_argument("-w", "--writers", type=numeric_min_checker(0, "must have a non-negative number of writers"), default=1, help="the number of writer pipelines")
         parser.add_argument("-c", "--compress", default=False, action='store_true', help="compress the output")
+        parser.add_argument("--assemblers", default=1, type=numeric_min_checker(1, "must have at least one assembler node"), help="level of parallelism for assembling records")
         parser.add_argument("--compress-parallel", default=1, type=numeric_min_checker(1, "must have at least one parallel compressor"), help="the parallelism for the output compression pipeline, if set")
         parser.add_argument("-s", "--max-secondary", type=numeric_min_checker(0, "must have a non-negative number of secondary results"), default=0, help="Max secondary results to store. >= 0 ")
         parser.add_argument("--deep-verify", default=False, action='store_true', help="verify record integrity")
@@ -49,7 +49,7 @@ class SnapCommonService(Service):
         joiner = tuple(tuple(a) + tuple(b) for a,b in zip(input_gen, pass_around_gen))
         ready_to_process = pipeline.join(upstream_tensors=joiner,
                                          parallel=args.parallel,
-                                         capacity=args.mmap_queue,
+                                         capacity=args.parallel, # multiplied by some factor?
                                          multi=True, name="ready_to_process")
         # need to unpack better here
         to_agd_reader, pass_around_agd_reader = zip(*((a[:2], a[2:]) for a in ready_to_process))
@@ -63,16 +63,17 @@ class SnapCommonService(Service):
 
         processed_bufs = tuple(a for a in process_processed_bufs())
         ready_to_assemble = pipeline.join(upstream_tensors=processed_bufs,
-                                          parallel=1, capacity=32, multi=True, name="ready_to_assemble") # TODO these params are kinda arbitrary :/
+                                          parallel=args.assemblers,
+                                          capacity=args.assemblers*2, multi=True, name="ready_to_assemble") # TODO these params are kinda arbitrary :/
         # ready_to_assemble: [output_buffers, num_records, first_ordinal, record_id, pass_around {flattened}) x N]
         to_assembler, pass_around_assembler = zip(*((a[:2], a[1:]) for a in ready_to_assemble))
         # each item out of this is a handle to AGDReads
         agd_read_assembler_gen = tuple(pipeline.agd_read_assembler(upstream_tensors=to_assembler, include_meta=False))
         # assembled_records, ready_to_align: [(agd_reads_handle, (num_records, first_ordinal, record_id), (pass_around)) x N]
         assembled_records_gen = tuple(zip(agd_read_assembler_gen, pass_around_assembler))
-        assembled_records = tuple(((a,) + tuple(b)) for a,b in assembled_records_gen)
+        assembled_records = tuple((a,) + tuple(b) for a,b in assembled_records_gen)
         ready_to_align = pipeline.join(upstream_tensors=assembled_records,
-                                       parallel=args.aligners, capacity=32, multi=True, name="ready_to_align") # TODO still have default capacity here :/
+                                       parallel=args.aligners, capacity=int(args.aligners*1.5), multi=True, name="ready_to_align") # TODO still have default capacity here :/
 
         if args.paired:
             aligner_type = persona_ops.snap_align_paired
