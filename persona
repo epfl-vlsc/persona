@@ -46,6 +46,7 @@ def get_args(modules):
       module_service = mod.get_services()[0]
       module_service.add_graph_args(parser=module_subparser)
       module_service.add_run_args(parser=module_subparser)
+      local_runtime.add_default_module_args(parser=module_subparser)
     else:
       module_subparsers = module_subparser.add_subparsers(help="Available services in module: ", dest="service")
       for module_service in mod.get_services():

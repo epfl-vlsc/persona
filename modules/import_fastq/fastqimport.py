@@ -52,6 +52,7 @@ class ImportFastqService(Service):
 
     def add_graph_args(self, parser):
 
+        # TODO sane defaults depending on num schedulable cores
         parser.add_argument("-c", "--chunk", type=numeric_min_checker(1, "chunk size"), default=100000, help="chunk size to create records")
         parser.add_argument("-p", "--parallel-conversion", type=numeric_min_checker(1, "parallel conversion"), default=1, help="number of parallel converters")
         parser.add_argument("-n", "--name", required=True, help="name for the record")
@@ -110,9 +111,9 @@ class ImportFastqService(Service):
         compressors = list(compress_pipeline(converters=converters, compress_parallelism=args.compress_parallel))
 
         writers = list(writer_pipeline(compressors, args.write, args.name, self.outdir))
-        final = pipeline.join(upstream_tensors=writers, capacity=8, parallel=1, multi=True)[0]
+        #final = pipeline.join(upstream_tensors=writers, capacity=8, parallel=1, multi=True)[0]
 
-        return final, []
+        return writers, []
     
     def on_finish(self, args, results):
         for res in results:
@@ -140,15 +141,15 @@ def read_pipeline(fastq_file, args):
                                  synchronous=False, name="file_map_0")
         reader_1 = persona_ops.file_m_map(filename=files[1], pool_handle=mapped_file_pool,
                                  synchronous=False, name="file_map_1")
-        queued_results = pipeline.join([reader_0, reader_1], parallel=1, capacity=2)
+        queued_results = pipeline.join([reader_0, reader_1], parallel=1, capacity=2, name="read_out")
     else:
         reader = persona_ops.file_m_map(filename=fastq_file, pool_handle=mapped_file_pool,
                                  synchronous=False, name="file_map")
-        queued_results = pipeline.join([reader], parallel=1, capacity=2)
+        queued_results = pipeline.join([reader], parallel=1, capacity=2, name="read_out")
     return queued_results[0]
 
 def compress_pipeline(converters, compress_parallelism):
-    converted_batch = pipeline.join(converters, parallel=compress_parallelism, capacity=8, multi=True)
+    converted_batch = pipeline.join(converters, parallel=compress_parallelism, capacity=8, multi=True, name="compress_input")
 
     buf_pool = persona_ops.buffer_pool(size=0, bound=False, name="bufpool")
 
@@ -162,7 +163,7 @@ def compress_pipeline(converters, compress_parallelism):
 
 def writer_pipeline(compressors, write_parallelism, record_id, output_dir):
     prefix_name = tf.constant("{}_".format(record_id), name="prefix_string")
-    compressed_batch = pipeline.join(compressors, parallel=write_parallelism, capacity=8, multi=True)
+    compressed_batch = pipeline.join(compressors, parallel=write_parallelism, capacity=8, multi=True, name="write_input")
 
     for base, qual, meta, first_ordinal, num_recs in compressed_batch:
         first_ord_as_string = string_ops.as_string(first_ordinal, name="first_ord_as_string")
