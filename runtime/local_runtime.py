@@ -32,11 +32,15 @@ def create_unique_file(directory, prefix, suffix, start=0):
 def add_default_module_args(parser):
     parser.add_argument("--record", default=False, action='store_true', help="record usage of the running process")
     parser.add_argument("--record-directory", default=os.path.dirname(os.getcwd()), type=parse.path_exists_checker(), help="directory to store runtime statistics")
+    parser.add_argument("--iterations", type=int, help="limit the number of iterations for the graph, if set")
 
 def execute(args, modules):
   record_stats = args.record
   stats_directory = args.record_directory
- 
+  iterations = args.iterations
+  if iterations is not None:
+      assert iterations > 0
+
   module = modules[args.command]
 
   if hasattr(args, 'service'):
@@ -86,6 +90,8 @@ def execute(args, modules):
               print("Local executor starting {} ...".format(args.command))
               threads = tf.train.start_queue_runners(coord=coord, sess=sess)
               while not coord.should_stop():
+                  if iterations is not None and count == iterations:
+                      break
                   try:
                       #print("Running round {}".format(count))
                       result = sess.run(service_sink)

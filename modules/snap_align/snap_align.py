@@ -76,10 +76,11 @@ class SnapCommonService(Service):
                                        parallel=args.aligners, capacity=int(args.aligners*1.5), multi=True, name="ready_to_align") # TODO still have default capacity here :/
 
         if args.paired:
+            raise Exception("no paired aligner while we're trying this new stuff :D")
             aligner_type = persona_ops.snap_align_paired
             aligner_options = persona_ops.paired_aligner_options(cmd_line=args.snap_args.split(), name="paired_aligner_options")
         else:
-            aligner_type = persona_ops.snap_align_single
+            aligner_type = persona_ops.new_snap_align_single
             aligner_options = persona_ops.aligner_options(cmd_line=args.snap_args.split(), name="aligner_options") # -o output.sam will not actually do anything
 
         first_assembled_result = ready_to_align[0][1:]
@@ -98,12 +99,11 @@ class SnapCommonService(Service):
         genome = persona_ops.genome_index(genome_location=args.index_path, name="genome_loader")
 
         def make_aligners():
-            single_executor = persona_ops.snap_single_executor(num_threads=args.aligner_threads,
-                                                               work_queue_size=args.aligners+1,
-                                                               options_handle=aligner_options,
-                                                               genome_handle=genome)
+            single_executor = persona_ops.new_snap_single_executor(num_threads=args.aligner_threads,
+                                                                   options_handle=aligner_options,
+                                                                   genome_handle=genome)
             for read_handle, pass_around in zip(pass_to_aligners, pass_around_aligners):
-                aligner_results = persona_ops.snap_align_single(read=read_handle,
+                aligner_results = persona_ops.new_snap_align_single(read=read_handle,
                                                                 buffer_list_pool=buffer_list_pool,
                                                                 subchunk_size=args.subchunking,
                                                                 executor_handle=single_executor,
