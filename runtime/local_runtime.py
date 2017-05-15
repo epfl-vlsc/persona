@@ -57,7 +57,9 @@ def execute(args, modules):
       service_ops = list(service_ops)
   assert len(service_ops) + len(service_init_ops) > 0
 
-  service_sink = pipeline.join(upstream_tensors=service_ops, capacity=64, parallel=1, multi=True, name="global_sink_queue")[0]
+  has_service_ops = len(service_ops) > 0
+  if has_service_ops:
+      service_sink = pipeline.join(upstream_tensors=service_ops, capacity=64, parallel=1, multi=True, name="global_sink_queue")[0]
 
   init_ops = [tf.global_variables_initializer(), tf.local_variables_initializer()]
 
@@ -67,10 +69,12 @@ def execute(args, modules):
   results = []
   stats_results = {}
   with tf.Session() as sess:
-      if summary:
+      if summary and has_service_ops:
           trace_dir = setup_output_dir(dirname=args.command + "_summary")
           service_sink.append(tf.summary.merge_all())
           summary_writer = tf.summary.FileWriter(trace_dir, graph=sess.graph, max_queue=2**20, flush_secs=10**4)
+      else:
+          summary = False
 
       count = 0
       sess.run(init_ops)
