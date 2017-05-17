@@ -20,7 +20,17 @@ location_value = "location"
 class SortCommonService(Service):
     columns = ["base", "qual", "metadata", "results"]
     merge_result_columns = ["results", "base", "qual", "metadata"]
-    write_columns = []
+    merge_meta_columns = ["metadata", "base", "qual", "results"]
+    records_type_location = ({"type": "structured", "extension": "results"},
+                            {"type": "base_compact", "extension": "base"},
+                            {"type": "text", "extension": "qual"},
+                            {"type": "text", "extension": "metadata"},
+                            )
+    records_type_metadata = ({"type": "text", "extension": "metadata"},
+                            {"type": "base_compact", "extension": "base"},
+                            {"type": "text", "extension": "qual"},
+                            {"type": "structured", "extension": "results"},
+                            )
 
     def extract_run_args(self, args):
         dataset = args.dataset
@@ -45,11 +55,9 @@ class SortCommonService(Service):
         start_var = variables.Variable(-1)
         incr_var = start_var.assign_add(1)
         var_as_string = string_ops.as_string(incr_var)
-        print(base_name)
         if not isinstance(base_name, ops.Tensor):
             base_name = tf.constant(str(base_name), dtype=dtypes.string,
                                              shape=tensor_shape.scalar(), name="name_generator_base")
-        print(base_name)
         return tf.string_join([base_name, var_as_string], separator=separator, name="name_generator")
 
 
@@ -74,8 +82,9 @@ class SortCommonService(Service):
 
         for a in recs_and_handles:
             compressed_bufs = [a[0]]
-            for buf in a[1:]:
-                compressed_bufs.append(persona_ops.buffer_pair_compressor(buffer_pool=buf_pool, buffer_pair=buf))
+            for i, buf in enumerate(a[1:]):
+                compact = True if i == 1 else False  # bases is always second column
+                compressed_bufs.append(persona_ops.buffer_pair_compressor(buffer_pool=buf_pool, buffer_pair=buf, pack=compact))
 
             yield compressed_bufs
 
@@ -104,23 +113,23 @@ class SortCommonService(Service):
         bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="local_read_merge_buffer_list_pool")
 
         if args.order_by == location_value:
-            merge_op = persona_ops.agd_merge(chunk_size=args.chunk,
-                                     buffer_pair_pool=bpp,
-                                     chunk_group_handles=chunks_to_merge,
-                                     output_buffer_queue_handle=q.queue_ref,
-                                     name="agd_local_merge")
+            merge = persona_ops.agd_merge
+        else:
+            merge = persona_ops.agd_merge_metadata
 
-    
+        merge_op = merge(chunk_size=args.chunk,
+                                 buffer_pair_pool=bpp,
+                                 chunk_group_handles=chunks_to_merge,
+                                 output_buffer_queue_handle=q.queue_ref,
+                                 name="agd_local_merge")
+
         tf.train.queue_runner.add_queue_runner(tf.train.queue_runner.QueueRunner(q, [merge_op]))
    
         # num_recs, results, base, qual, meta
 
         return [q.dequeue() for a in range(args.compress_parallel)]
         
-
     def make_sort_pipeline(self, args, input_gen):
-        
-        self.write_columns = self.columns
 
         ready_to_process = pipeline.join(upstream_tensors=input_gen,
                                          parallel=args.sort_read_parallel,
@@ -143,18 +152,19 @@ class SortCommonService(Service):
     
         bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="local_read_buffer_pair_pool")
 
+        if args.order_by == location_value:
+            sorter = persona_ops.agd_sort
+        else:
+            sorter = persona_ops.agd_sort_metadata
+
         sorters = []
         for i in range(args.sort_parallel):
             b, q, m, r, num = ready
-            superchunk_matrix, num_recs = persona_ops.agd_sort(buffer_pair_pool=bpp,
+            superchunk_matrix, num_recs = sorter(buffer_pair_pool=bpp,
                               results_handles=r, bases_handles=b,
                               qualities_handles=q, metadata_handles=m,
                               num_records=num, name="local_read_agd_sort")
             sorters.append( [ superchunk_matrix, num_recs, name_queue[i] ] )
-
-        #ready_to_sort = tf.train.batch_join(multi_column_gen
-
-
 
         return sorters
 
@@ -190,7 +200,8 @@ class LocalSortService(LocalCommonService):
 
         single = pipeline.join(batch, parallel=write_parallelism, capacity=8, multi=True, name="writer_queue")
         types = ["base_compact", "text", "text", "structured"]
-        
+      
+        # no uncompressed buffer pair writer yet
         writers = []
         for buf, num_recs, record_id in single:
             w = [] 
@@ -213,7 +224,6 @@ class LocalSortService(LocalCommonService):
         compressed_buf = pipeline.join(compressed_bufs, capacity=4, multi=True, parallel=1)[0]
         record_name_constant = constant_op.constant(record_name)
         num_recs = compressed_buf[0]
-        print(num_recs)
         first_ordinal = tf.Variable(-1 * args.chunk, dtype=dtypes.int64, name="first_ordinal")
         first_ord = first_ordinal.assign_add(math_ops.to_int64(num_recs, name="first_ord_cast_to_64"), use_locking=True)
         first_ord_str = string_ops.as_string(first_ord, name="first_ord_string")
@@ -222,14 +232,10 @@ class LocalSortService(LocalCommonService):
         handle = tf.stack(compressed_buf[1:])
         write_tuple = [handle, record_name, first_ord, num_recs, file_name]
        
-        records_type = ({"type": "structured", "extension": "results"},
-                                {"type": "base_compact", "extension": "base"},
-                                {"type": "text", "extension": "qual"},
-                                {"type": "text", "extension": "metadata"},
-                                )
 
         # upstream_tensors: a list of tensor tuples of type: buffer_list_handle, record_id, first_ordinal, num_records, file_path
-        writers = pipeline.local_write_pipeline(upstream_tensors=[write_tuple], compressed=True, record_types=records_type, name="local_write_pipeline")
+        types = self.records_type_location if args.order_by == location_value else self.records_type_metadata
+        writers = pipeline.local_write_pipeline(upstream_tensors=[write_tuple], compressed=True, record_types=types, name="local_write_pipeline")
         
         return writers
 
@@ -237,7 +243,6 @@ class LocalSortService(LocalCommonService):
     def make_graph(self, in_queue, args):
 
         rec_name = args.dataset['records'][0]['path'][:-1] + "out_"
-        print("record name is {}".format(rec_name))
         parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(args.sort_read_parallel))
 
         # read_files: [(file_path, (mmaped_file_handles, a gen)) x N]
@@ -264,21 +269,21 @@ class LocalSortService(LocalCommonService):
 
     
         # may need to add disk read parallelism here
-        merge_files = list(list(a) for a in pipeline.local_read_pipeline(upstream_tensors=[full_path_scalar], columns=self.merge_result_columns))
-        print("merge_files: {}".format(merge_files))
+        if args.order_by == location_value:
+            merge_cols = self.merge_result_columns
+        else:
+            merge_cols = self.merge_meta_columns
+
+        merge_files = list(list(a) for a in pipeline.local_read_pipeline(upstream_tensors=[full_path_scalar], columns=merge_cols))
         stacked_chunks = []
         for f in merge_files:
             stacked_chunks.append(tf.stack(f))
 
-        print("stacked {}".format(stacked_chunks))
-
         chunks_to_merge = tf.train.batch(stacked_chunks, batch_size=num_inter_files)
         recs_and_handles = self.make_merge_pipeline(args=args, chunks_to_merge=chunks_to_merge)
-        
+       
         compressed_bufs = list(self.make_compressors(recs_and_handles))
-        print(compressed_bufs)
         writers = list(list(a) for a in self.make_writers(args, rec_name, compressed_bufs))
-        print(writers)
 
         return writers, []
         
