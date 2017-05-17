@@ -237,6 +237,7 @@ class LocalCommonService(SnapCommonService):
         for f in os.listdir(args.dataset_dir):
             if f.endswith(".json"):
                 metafile = f
+                break
         with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
             json.dump(args.dataset, f, indent=4)
 
