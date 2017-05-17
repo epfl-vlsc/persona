@@ -98,6 +98,7 @@ def execute(args, modules):
                           results.append(result[:-1])
                           summary_writer.add_summary(result[-1], global_step=count)
                       else:
+                          print("result is: {}".format(result))
                           results.append(result)
                   except tf.errors.OutOfRangeError:
                       #print('Got out of range error!')

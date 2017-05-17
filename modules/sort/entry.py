@@ -1,14 +1,31 @@
 import os
-from . import local_sort
-from . import ceph_sort
+from . import merge_sort
+from ..common import service
 from ..common.parse import numeric_min_checker
+
+class CephSortSingleton(service.ServiceSingleton):
+  class_type = merge_sort.CephSortService
+
+class LocalSortSingleton(service.ServiceSingleton):
+  class_type = merge_sort.LocalSortService
+
+_singletons = [ CephSortSingleton(), LocalSortSingleton() ]
+_service_map = { a.get_shortname(): a for a in _singletons }
+
+def get_services():
+  return _singletons
+
+def lookup_service(name):
+  return _service_map[name]
+
 
 def get_tooltip():
   return "Sort an AGD dataset"
 
-def get_services():
-    return []
 
+
+
+# ------------------------------------
 def _run_local(args):
   meta_file = args.metadata_file
   if not os.path.exists(meta_file) and os.path.isfile(meta_file):
@@ -67,30 +84,6 @@ def run(args):
 
 
 def get_args(subparser):
-  default_dir_help = "Defaults to metadata_file's directory"
-  subsubparsers = subparser.add_subparsers(help="Supported storage subsystems", dest="storage")
-
-  # args for local disk 
-  localsubparser = subsubparsers.add_parser(name="local", help="Options for sorting a dataset on local disk")
-
-  localsubparser.add_argument("-r", "--sort-read-parallel", default=1, type=numeric_min_checker(minimum=1, message="read parallelism min for sort phase"),
-                      help="total parallelism level for local read pipeline for sort phase")
-  localsubparser.add_argument("-c", "--column-grouping", default=5, help="grouping factor for parallel chunk sort",
-                              type=numeric_min_checker(minimum=1, message="column grouping min"))
-  localsubparser.add_argument("-s", "--sort-parallel", default=1, help="number of sorting pipelines to run in parallel",
-                      type=numeric_min_checker(minimum=1, message="sorting pipeline min"))
-  localsubparser.add_argument("--sort-process-parallel", default=1, type=numeric_min_checker(minimum=1, message="parallel processing for sort stage"),
-                      help="parallel processing pipelines for sorting stage")
-  localsubparser.add_argument("-w", "--write-parallel", default=1, help="number of ceph writers to use in parallel",
-                      type=numeric_min_checker(minimum=1, message="writing pipeline min"))
-  localsubparser.add_argument("--output-name", default="sorted", help="name for the output record")
-  localsubparser.add_argument("-b", "--order-by", default="location", choices=["location", "metadata"], help="sort by this parameter [location | metadata]")
-  localsubparser.add_argument("--chunk", default=2, type=numeric_min_checker(1, "need non-negative chunk size"), help="chunk size for final merge stage")
-  localsubparser.add_argument("--input", help="input directory, containing all the files described in metadata_file\n{}".format(default_dir_help))
-  localsubparser.add_argument("--output", help="output directory, where the sorted files should be written\n{}".format(default_dir_help))
-  localsubparser.add_argument("--summary", default=False, action='store_true', help="store summary information")
-  localsubparser.add_argument("--logdir", default=".", help="Directory to write tensorflow summary data. Default is PWD")
-
   # args for ceph storage system
   cephsubparser = subsubparsers.add_parser(name="ceph", help="Options for sorting a dataset in Ceph object store")
   cephsubparser.add_argument("-r", "--sort-read-parallel", default=1, type=numeric_min_checker(minimum=1, message="read parallelism min for sort phase"),
