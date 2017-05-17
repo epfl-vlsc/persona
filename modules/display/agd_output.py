@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 import tensorflow as tf
-import argparse
 import os
-import json
 from ..common.service import Service
 
 persona_ops = tf.contrib.persona.persona_ops()
@@ -56,11 +54,9 @@ def run(args):
   if (args.finish <= args.start):
     args.finish = args.start + 1
 
-
-  if args.dataset_dir[-1] is not '/':
-    pathname = os.path.dirname(args.dataset_dir) + '/'
-  else:
-    pathname = args.dataset_dir
+  if not os.path.isdir(args.dataset_dir):
+      raise Exception("Dataset directory '{}' doesn't exist".format(args.dataset_dir))
+  pathname = os.path.abspath(args.dataset_dir) + "/"
 
   path = tf.constant(pathname)
   start = tf.constant(args.start, dtype=tf.int32)

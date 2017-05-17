@@ -231,11 +231,13 @@ class LocalCommonService(SnapCommonService):
     def on_finish(self, args, results):
         # add results column to metadata
         columns = args.dataset['columns']
-        columns.append('results')
+        if "results" not in columns:
+            columns.append('results')
         args.dataset['columns'] = columns
         for f in os.listdir(args.dataset_dir):
             if f.endswith(".json"):
                 metafile = f
+                break
         with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
             json.dump(args.dataset, f, indent=4)
 
