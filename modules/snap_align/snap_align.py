@@ -34,7 +34,6 @@ class SnapCommonService(Service):
         parser.add_argument("-s", "--max-secondary", type=numeric_min_checker(0, "must have a non-negative number of secondary results"), default=0, help="Max secondary results to store. >= 0 ")
         parser.add_argument("--deep-verify", default=False, action='store_true', help="verify record integrity")
         parser.add_argument("--paired", default=False, action='store_true', help="interpret dataset as interleaved paired dataset")
-        parser.add_argument("--summary", default=False, action="store_true", help="Add TensorFlow summary info to the graph")
         parser.add_argument("-i", "--index-path", type=path_exists_checker(), default="/scratch/stuart/ref_index", help="location of the ref index on all machines. Make sure all machines have this path!")
         parser.add_argument("--snap-args", type=str, default="", help="SNAP algorithm specific args. Pass with enclosing \" \". E.g. \"-om 5 -omax 1\" . See SNAP documentation for all options.")
 
