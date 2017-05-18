@@ -41,8 +41,6 @@ def get_args():
     parser.add_argument("--chunk", default=2, type=numeric_min_checker(1, "need non-negative chunk size"), help="chunk size for final merge stage")
     parser.add_argument("--input", help="input directory, containing all the files described in metadata_file\n{}".format(default_dir_help))
     parser.add_argument("--output", help="output directory, where the sorted files should be written\n{}".format(default_dir_help))
-    parser.add_argument("--summary", default=False, action='store_true', help="store summary information")
-    parser.add_argument("--logdir", default=".", help="Directory to write tensorflow summary data. Default is PWD")
     parser.add_argument("metadata_file", help="the json metadata file describing the chunks in the original result set")
 
     args = parser.parse_args()

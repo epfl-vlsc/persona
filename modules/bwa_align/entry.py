@@ -47,7 +47,6 @@ def get_graph_args(subparser):
   subparser.add_argument("--null", type=float, required=False, help="use the null aligner instead of actually aligning")
   subparser.add_argument("--deep-verify", default=False, action='store_true', help="verify record integrity")
   # TODO this is rigid, needs to be changed to get from the queue service!
-  subparser.add_argument("--summary", default=False, action="store_true", help="Add TensorFlow summary info to the graph")
   #subparser.add_argument("local_path", help="Read from this path on their local disks (NOT THE NETWORK)")
 
 def get_run_args(subparser):

@@ -41,7 +41,6 @@ class BWACommonService(Service):
         parser.add_argument("--null", type=float, required=False, help="use the null aligner instead of actually aligning")
         parser.add_argument("--deep-verify", default=False, action='store_true', help="verify record integrity")
         # TODO this is rigid, needs to be changed to get from the queue service!
-        parser.add_argument("--summary", default=False, action="store_true", help="Add TensorFlow summary info to the graph")
         parser.add_argument("--bwa-args", default="", help="BWA algorithm options")
 
     def make_central_pipeline(self, args, input_gen, pass_around_gen):

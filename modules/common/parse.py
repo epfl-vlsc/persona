@@ -27,7 +27,7 @@ def path_exists_checker(check_dir=True, make_absolute=True, make_if_empty=False)
             elif not os.path.isfile(path=path):
                 raise ArgumentTypeError("path {pth} exists, but isn't a file".format(pth=path))
         elif check_dir and make_if_empty:
-            os.makedirs(path=path)
+            os.makedirs(name=path)
         else:
             raise ArgumentTypeError("path {pth} doesn't exist on filesystem".format(pth=path))
         if make_absolute:

@@ -41,8 +41,6 @@ def get_args():
     parser.add_argument("-b", "--order-by", default="location", choices=["location", "metadata"], help="sort by this parameter [location | metadata]")
     parser.add_argument("--output-name", default="sorted", help="name for the output record")
     parser.add_argument("--chunk", default=2, type=numeric_min_checker(1, "need non-negative chunk size"), help="chunk size for final merge stage")
-    parser.add_argument("--summary", default=False, action='store_true', help="store summary information")
-    parser.add_argument("--logdir", default=".", help="Directory to write tensorflow summary data. Default is PWD")
     parser.add_argument("--output-pool", default="", help="The Ceph cluster pool in which the output dataset should be written")
     parser.add_argument("--ceph-read-chunk-size", default=(2**26), type=int, help="minimum size to read from ceph storage, in bytes")
     parser.add_argument("metadata_file", help="the json metadata file describing the chunks in the original result set")
