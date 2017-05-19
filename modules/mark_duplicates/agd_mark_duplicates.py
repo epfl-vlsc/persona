@@ -6,10 +6,9 @@ import os
 from tensorflow.python.ops import data_flow_ops, string_ops
 
 from ..common.service import Service
-from ..common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
+from common.parse import numeric_min_checker, path_exists_checker
 
 import tensorflow as tf
-import itertools
 
 persona_ops = tf.contrib.persona.persona_ops()
 from tensorflow.contrib.persona import queues, pipeline

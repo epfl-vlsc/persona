@@ -5,7 +5,7 @@ import os
 import json
 import multiprocessing
 from ..common.service import Service
-from ..common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
+from common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
 from tensorflow.python.ops import io_ops, variables, string_ops, array_ops, data_flow_ops, math_ops, control_flow_ops
 from tensorflow.python.framework import ops, tensor_shape, common_shapes, constant_op, dtypes
 

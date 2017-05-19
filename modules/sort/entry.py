@@ -1,7 +1,7 @@
 import os
 from . import merge_sort
 from ..common import service
-from ..common.parse import numeric_min_checker
+from common.parse import numeric_min_checker
 
 class CephSortSingleton(service.ServiceSingleton):
   class_type = merge_sort.CephSortService

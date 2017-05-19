@@ -6,7 +6,7 @@ import argparse
 import re
 import time
 from tensorflow.contrib.persona import pipeline
-from modules.common.parse import numeric_min_checker
+from common.parse import numeric_min_checker
 
 import logging
 logging.basicConfig()
@@ -147,7 +147,7 @@ def execute(args, modules):
 
   # start our local server
   server = tf.train.Server(cluster_spec, config=None, job_name=cluster_name, task_index=task_index)
-  print("Persona distributed runtime starting TF server for index {}".format(task_index))
+  log.debug("Persona distributed runtime starting TF server for index {}".format(task_index))
 
   with tf.Session(server.target) as sess:
       sess.run(init_ops)
@@ -164,7 +164,7 @@ def execute(args, modules):
                   log.debug("Waiting for uninitialized variables")
                   time.sleep(startup_wait_time)
 
-              print("All variables initialized. Persona dist executor starting {} ...".format(args.command))
+              log.debug("All variables initialized. Persona dist executor starting {} ...".format(args.command))
               threads = tf.train.start_queue_runners(coord=coord, sess=sess)
               wait_op()
               log.debug("Got a stop from quorum. Joining...")

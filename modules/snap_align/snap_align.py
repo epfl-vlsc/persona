@@ -4,7 +4,7 @@ import os
 import json
 import multiprocessing
 from ..common.service import Service
-from ..common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
+from common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
 
 import tensorflow as tf
 import itertools

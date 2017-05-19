@@ -5,7 +5,7 @@ import os
 import errno
 import json
 from ..common.service import Service
-from ..common.parse import numeric_min_checker
+from common.parse import numeric_min_checker
 from tensorflow.python.ops import data_flow_ops, string_ops
 from tensorflow.python.framework import tensor_shape, dtypes
 from tensorflow.python.training import queue_runner

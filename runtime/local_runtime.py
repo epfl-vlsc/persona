@@ -2,7 +2,7 @@ import os
 import tensorflow as tf
 import shutil
 from tensorflow.contrib.persona import pipeline
-from modules.common import parse
+from common import parse
 from common import recorder
 import contextlib
 import json
