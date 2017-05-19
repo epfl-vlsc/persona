@@ -93,7 +93,7 @@ def execute(args, modules):
   output_shapes = service.output_shapes()
 
   # TODO better define the capacity
-  with tf.device("/job:{cluster_name}/{queue_idx}".format(cluster_name=cluster_name, queue_idx=queue_index)): # all queues live on the 0th task index
+  with tf.device("/job:{cluster_name}/task:{queue_idx}".format(cluster_name=cluster_name, queue_idx=queue_index)): # all queues live on the 0th task index
       in_queue = tf.FIFOQueue(capacity=32, dtypes=input_dtypes, shapes=input_shapes, shared_name=service+"_input")
       out_queue = tf.FIFOQueue(capacity=32, dtypes=output_dtypes, shapes=output_shapes, shared_name=service+"_output")
 
