@@ -7,6 +7,7 @@ import re
 import time
 from tensorflow.contrib.persona import pipeline
 from common.parse import numeric_min_checker
+from . import dist_common
 
 import logging
 logging.basicConfig()
@@ -55,49 +56,7 @@ def add_cluster_def():
 
 def add_default_module_args(parser):
     parser.add_argument("-T", "--task-index", type=numeric_min_checker(minimum=0, message="task index must be non-negative"), required=True, help="TF Cluster task index")
-    parser.add_argument("-Q", "--queue-index", type=numeric_min_checker(minimum=0, message="queue index must be non-negative"), default=0, help="task index for cluster node that hosts the queues")
-    parser.add_argument("-C", "--cluster-def", dest="cluster_spec", required=True, nargs='+', type=add_cluster_def(), help="TF Cluster definition")
-
-@contextlib.contextmanager
-def quorum(cluster_spec, task_index, session):
-    def create_shutdown_queues():
-        def make_shutdown_queue(idx):
-            return tf.FIFOQueue(capacity=num_tasks, dtypes=tf.int32, shared_name="done_queue_{}".format(idx))
-
-        this_idx = tf.constant(task_index, dtype=tf.int32)
-        num_tasks = cluster_spec.num_tasks()
-        for task_idx in cluster_spec.task_indices(cluster_name):
-            with tf.device("/job:{cluster_name}/task:{idx}".format(cluster_name=cluster_name,
-                                                                   idx=task_idx)):
-                q = make_shutdown_queue(idx=task_idx)
-                yield task_idx, (q, q.enqueue(this_idx, name="{this}_stops_{that}".format(this=task_index, that=task_idx)))
-    queue_mapping = dict(create_shutdown_queues())
-    all_indices = set(queue_mapping.keys())
-    if task_index not in all_indices:
-        raise Exception("Error on quorum setup: task index {ti} for this process not in all indices: {all}".format(
-            ti=task_index, all=all_indices
-        ))
-    this_queue = queue_mapping[task_index][0]
-    this_queue_dequeue = this_queue.dequeue(name="{cluster}_task:{t}_dequeue".format(cluster=cluster_name, t=task_index))
-    stop_ops = [a[1] for idx, a in queue_mapping.items() if idx != task_index]
-    needed_indices = all_indices.difference({task_index})
-
-    def wait_for_stop():
-        if len(needed_indices) == 0:
-            return False
-        new_idx = session.run(this_queue_dequeue)
-        log.debug("Stopping. Need indices {}".format(sorted(needed_indices)))
-        if new_idx in needed_indices:
-            needed_indices.remove(new_idx)
-        else:
-            log.error("Got index {i}, even though it wasn't needed".format(i=new_idx))
-        return len(needed_indices) > 0
-
-    yield wait_for_stop # yield back to the context manager caller
-
-    session.run(stop_ops)
-    while wait_for_stop():
-        pass
+    dist_common.queue_only_args(parser=parser)
 
 def execute(args, modules):
  
