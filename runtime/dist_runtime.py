@@ -1,6 +1,7 @@
 import os
 import tensorflow as tf
 import shutil
+import contextlib
 import argparse
 import re
 import time
@@ -57,13 +58,46 @@ def add_default_module_args(parser):
     parser.add_argument("-Q", "--queue-index", type=numeric_min_checker(minimum=0, message="queue index must be non-negative"), default=0, help="task index for cluster node that hosts the queues")
     parser.add_argument("-C", "--cluster-def", dest="cluster_spec", required=True, nargs='+', type=add_cluster_def(), help="TF Cluster definition")
 
-def setup_output_dir(dirname="cluster_traces"):
-    trace_path = os.path.join(os.path.dirname(os.getcwd()), dirname)
-    if os.path.exists(trace_path):
-        # nuke it
-        shutil.rmtree(trace_path)
-    os.makedirs(trace_path)
-    return trace_path
+@contextlib.contextmanager
+def quorum(cluster_spec, task_index, session):
+    def create_shutdown_queues():
+        def make_shutdown_queue(idx):
+            return tf.FIFOQueue(capacity=num_tasks, dtypes=tf.int32, shared_name="done_queue_{}".format(idx))
+
+        this_idx = tf.constant(task_index, dtype=tf.int32)
+        num_tasks = cluster_spec.num_tasks()
+        for task_idx in cluster_spec.task_indices(cluster_name):
+            with tf.device("/job:{cluster_name}/task:{idx}".format(cluster_name=cluster_name,
+                                                                   idx=task_idx)):
+                q = make_shutdown_queue(idx=task_idx)
+                yield task_idx, (q, q.enqueue(this_idx, name="{this}_stops_{that}".format(this=task_index, that=task_idx)))
+    queue_mapping = dict(create_shutdown_queues())
+    all_indices = set(queue_mapping.keys())
+    if task_index not in all_indices:
+        raise Exception("Error on quorum setup: task index {ti} for this process not in all indices: {all}".format(
+            ti=task_index, all=all_indices
+        ))
+    this_queue = queue_mapping[task_index][0]
+    this_queue_dequeue = this_queue.dequeue(name="{cluster}_task:{t}_dequeue".format(cluster=cluster_name, t=task_index))
+    stop_ops = [a[1] for idx, a in queue_mapping.items() if idx != task_index]
+    needed_indices = all_indices.difference({task_index})
+
+    def wait_for_stop():
+        if len(needed_indices) == 0:
+            return True
+        new_idx = session.run(this_queue_dequeue)
+        log.debug("Stopping. Need indices {}".format(sorted(needed_indices)))
+        if new_idx in needed_indices:
+            needed_indices.remove(new_idx)
+        else:
+            log.error("Got index {i}, even though it wasn't needed".format(i=new_idx))
+        return len(needed_indices) > 0
+
+    yield wait_for_stop # yield back to the context manager caller
+
+    session.run(stop_ops)
+    while wait_for_stop():
+        pass
 
 def execute(args, modules):
  
@@ -109,14 +143,13 @@ def execute(args, modules):
       service_sink = pipeline.join(upstream_tensors=service_ops, capacity=32, parallel=1, multi=True)[0]
 
       final_op = out_queue.enqueue(service_sink)
+      tf.train.add_queue_runner(qr=tf.train.QueueRunner(queue=out_queue, enqueue_ops=(final_op,)))
 
   # start our local server
   server = tf.train.Server(cluster_spec, config=None, job_name=cluster_name, task_index=task_index)
   print("Persona distributed runtime starting TF server for index {}".format(task_index))
 
-  results = []
   with tf.Session(server.target) as sess:
-      count = 0
       sess.run(init_ops)
       if len(service_init_ops) > 0:
           sess.run(service_init_ops)
@@ -125,25 +158,21 @@ def execute(args, modules):
       if len(service_ops) > 0:
           coord = tf.train.Coordinator()
 
-          uninitialized_vars = tf.report_uninitialized_variables()
-          while len(sess.run(uninitialized_vars)) > 0:
-              log.debug("Waiting for uninitialized variables")
-              time.sleep(startup_wait_time)
+          with quorum(cluster_spec=cluster_spec, task_index=task_index, session=sess) as wait_op:
+              uninitialized_vars = tf.report_uninitialized_variables()
+              while len(sess.run(uninitialized_vars)) > 0:
+                  log.debug("Waiting for uninitialized variables")
+                  time.sleep(startup_wait_time)
 
-          print("All variables initialized. Persona dist executor starting {} ...".format(args.command))
-          threads = tf.train.start_queue_runners(coord=coord, sess=sess)
-          while not coord.should_stop():
+              print("All variables initialized. Persona dist executor starting {} ...".format(args.command))
+              threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+              wait_op()
+              log.debug("Got a stop from quorum. Joining...")
+              coord.request_stop()
+              timeout_time=60*3
               try:
-                  print("Persona dist running round {}".format(count))
-                  result = sess.run(final_op)
-                  count += 1
-              except tf.errors.OutOfRangeError:
-                  print('Got out of range error!')
-                  break
-          print("Coord requesting stop")
-          coord.request_stop()
-          try:
-              coord.join(threads)
-          except RuntimeError as re:
-              log.error("Unable to stop threads after grace period")
-
+                  coord.join(threads=threads, stop_grace_period_secs=timeout_time)
+              except RuntimeError:
+                  log.error("Unable to wait for coordinator to stop all threads after {} seconds".format(timeout_time))
+              else:
+                  log.debug("All threads joined and dead")
