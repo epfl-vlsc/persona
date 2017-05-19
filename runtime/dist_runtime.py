@@ -45,7 +45,6 @@ def add_cluster_def():
             ))
         cluster = { cluster_name: dict(tuples) }
         cluster_spec = tf.train.ClusterSpec(cluster=cluster)
-        cluster_spec.task_address()
         return cluster_spec
     return _func
 
