@@ -23,17 +23,27 @@ def add_cluster_def():
                 split = cluster_member.split(",")
                 if len(split) != 2:
                     raise argparse.ArgumentTypeError("Got badly formed cluster member: '{}'".format(cluster_member))
-                host, port_str = split
+                host, task_index = split
                 try:
-                    port = int(port_str)
+                    t = int(task_index)
                     if host_re.match(host) is None:
                         raise argparse.ArgumentTypeError("Got invalid host '{h}'. Must be HOST:PORT".format(h=host))
-                    if port < 0:
+                    if t < 0:
                         raise argparse.ArgumentTypeError("Got negative port {p} in member '{m}'".format(p=port, m=cluster_member))
-                    yield host, port
+                    yield host, t
                 except ValueError:
                     raise argparse.ArgumentTypeError("Unable to convert port '{p}' from member '{m}' into an integer".format(p=port_str, m=cluster_member))
-        cluster = { cluster_name: list(clusters_transformed()) }
+        tuples = list(clusters_transformed())
+        num_workers = len(tuples)
+        uniq_task_indices = set(a[1] for a in tuples)
+        num_uniq_workers = len(uniq_task_indices)
+        if num_workers != num_uniq_workers:
+            raise argparse.ArgumentTypeError("Duplicate task index specified. Got {dup} duplicate indices.\nAll: {all}\nUnique: {uniq}".format(
+                dup=num_workers-num_uniq_workers,
+                all=sorted(a[1] for a in tuples),
+                uniq=sorted(uniq_task_indices)
+            ))
+        cluster = { cluster_name: dict(tuples) }
         cluster_spec = tf.train.ClusterSpec(cluster=cluster)
         return cluster_spec
     return _func
