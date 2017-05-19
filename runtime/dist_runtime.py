@@ -26,9 +26,13 @@ def add_cluster_def():
                 host, task_index = split
                 try:
                     t = int(task_index)
-                    if host_re.match(host) is None:
-                        raise argparse.ArgumentTypeError("Got invalid host '{h}'. Must be HOST:PORT".format(h=host))
                     if t < 0:
+                        raise argparse.ArgumentTypeError("Got negative task index {t}".format(t=t))
+                    parsed = host_re.match(host)
+                    if parsed is None:
+                        raise argparse.ArgumentTypeError("Got invalid host '{h}'. Must be HOST:PORT".format(h=host))
+                    port = int(parsed.group("port"))
+                    if port < 0:
                         raise argparse.ArgumentTypeError("Got negative port {p} in member '{m}'".format(p=port, m=cluster_member))
                     yield host, t
                 except ValueError:
