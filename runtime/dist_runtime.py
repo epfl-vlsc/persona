@@ -84,7 +84,7 @@ def quorum(cluster_spec, task_index, session):
 
     def wait_for_stop():
         if len(needed_indices) == 0:
-            return True
+            return False
         new_idx = session.run(this_queue_dequeue)
         log.debug("Stopping. Need indices {}".format(sorted(needed_indices)))
         if new_idx in needed_indices:
