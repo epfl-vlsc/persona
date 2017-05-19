@@ -2,7 +2,7 @@
 
 import argparse
 import tensorflow as tf
-from . import dist_common
+from runtime import dist_common
 
 import logging
 logging.basicConfig()

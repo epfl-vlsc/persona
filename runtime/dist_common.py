@@ -1,7 +1,6 @@
 import re
 import argparse
 import contextlib
-from .. import common
 from common import parse
 import tensorflow as tf
 
