@@ -15,7 +15,7 @@ def run():
     cluster_name = dist_common.cluster_name
     args = parser.parse_args()
     queue_index = args.queue_index
-    cluster_spec = args.cluster_spec
+    cluster_spec = dist_common.make_cluster_spec(cluster_members=args.cluster_members)
     cluster_spec.task_address(job_name=cluster_name, task_index=queue_index)
     server = tf.train.Server(cluster_spec, config=None, job_name=cluster_name, task_index=queue_index)
     log.debug("Starting queue host server")

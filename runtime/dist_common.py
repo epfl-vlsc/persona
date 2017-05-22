@@ -12,45 +12,38 @@ log.setLevel(logging.DEBUG)
 cluster_name = "persona"
 host_re = re.compile("(?P<host>(?:\w+)(?:\.\w+)*):(?P<port>\d+)")
 
-def add_cluster_def():
-    def _func(cluster_members):
-        def clusters_transformed():
-            for cluster_member in cluster_members:
-                split = cluster_member.split(",")
-                if len(split) != 2:
-                    raise argparse.ArgumentTypeError("Got badly formed cluster member: '{}'".format(cluster_member))
-                host, task_index = split
-                try:
-                    t = int(task_index)
-                    if t < 0:
-                        raise argparse.ArgumentTypeError("Got negative task index {t}".format(t=t))
-                    parsed = host_re.match(host)
-                    if parsed is None:
-                        raise argparse.ArgumentTypeError("Got invalid host '{h}'. Must be HOST:PORT".format(h=host))
-                    port = int(parsed.group("port"))
-                    if port < 0:
-                        raise argparse.ArgumentTypeError("Got negative port {p} in member '{m}'".format(p=port, m=cluster_member))
-                    yield host, t
-                except ValueError:
-                    raise argparse.ArgumentTypeError("Unable to convert task index {ti} into an integer".format(ti=task_index))
-        tuples = list(clusters_transformed())
-        num_workers = len(tuples)
-        uniq_task_indices = set(a[1] for a in tuples)
-        num_uniq_workers = len(uniq_task_indices)
-        if num_workers != num_uniq_workers:
-            raise argparse.ArgumentTypeError("Duplicate task index specified. Got {dup} duplicate indices.\nAll: {all}\nUnique: {uniq}".format(
-                dup=num_workers-num_uniq_workers,
-                all=sorted(a[1] for a in tuples),
-                uniq=sorted(uniq_task_indices)
-            ))
-        cluster = { cluster_name: dict(tuples) }
-        cluster_spec = tf.train.ClusterSpec(cluster=cluster)
-        return cluster_spec
-    return _func
+def parse_cluster_def_member(cluster_member):
+    split = cluster_member.split(",")
+    if len(split) != 2:
+        raise argparse.ArgumentTypeError("Got badly formed cluster member: '{}'".format(cluster_member))
+    task_index, host = split
+    try:
+        t = int(task_index)
+        if t < 0:
+            raise argparse.ArgumentTypeError("Got negative task index {t}".format(t=t))
+        parsed = host_re.match(host)
+        if parsed is None:
+            raise argparse.ArgumentTypeError("Got invalid host '{h}'. Must be HOST:PORT".format(h=host))
+        port = int(parsed.group("port"))
+        if port < 0:
+            raise argparse.ArgumentTypeError("Got negative port {p} in member '{m}'".format(p=port, m=cluster_member))
+        return t, host
+    except ValueError:
+        raise argparse.ArgumentTypeError("Unable to convert task index {ti} into an integer".format(ti=task_index))
 
 def queue_only_args(parser):
     parser.add_argument("-Q", "--queue-index", type=parse.numeric_min_checker(minimum=0, message="queue index must be non-negative"), default=0, help="task index for cluster node that hosts the queues")
-    parser.add_argument("-C", "--cluster-def", dest="cluster_spec", required=True, nargs='+', type=add_cluster_def(), help="TF Cluster definition")
+    parser.add_argument("-C", "--cluster", dest="cluster_members", required=True, nargs='+', type=parse_cluster_def_member, help="TF Cluster definition")
+
+def make_cluster_spec(cluster_members):
+    num_members = len(cluster_members)
+    unique_indices = { a[0] for a in cluster_members }
+    num_uniq_indices = len(unique_indices)
+    if num_uniq_indices < num_members:
+        raise Exception("Not all indices for cluster spec are uniq. {} items are duplicates".format(num_members - num_uniq_indices))
+    cluster = { cluster_name: dict(cluster_members) }
+    cluster_spec = tf.train.ClusterSpec(cluster=cluster)
+    return cluster_spec
 
 @contextlib.contextmanager
 def quorum(cluster_spec, task_index, session):

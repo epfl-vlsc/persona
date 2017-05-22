@@ -71,7 +71,7 @@ def execute(args, modules):
 
   task_index = args.task_index
   queue_index = args.queue_index
-  cluster_spec = args.cluster_spec
+  cluster_spec = dist_common.make_cluster_spec(cluster_members=args.cluster_members)
   for idx in (task_index, queue_index):
       # this checks if the task index is in cluster_def
       # will throw an exception if not found
