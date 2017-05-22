@@ -56,8 +56,7 @@ def add_default_module_args(parser):
     dist_common.queue_only_args(parser=parser)
 
 def execute(args, modules):
- 
-  module = modules[args.command]
+  module = modules[args.dist_command]
 
   if hasattr(args, 'service'):
     service_mode = args.service
@@ -81,11 +80,12 @@ def execute(args, modules):
   input_shapes = service.input_shapes()
   output_dtypes = service.output_dtypes()
   output_shapes = service.output_shapes()
+  service_name = service.get_shortname()
 
   # TODO better define the capacity
   with tf.device("/job:{cluster_name}/task:{queue_idx}".format(cluster_name=cluster_name, queue_idx=queue_index)): # all queues live on the 0th task index
-      in_queue = tf.FIFOQueue(capacity=32, dtypes=input_dtypes, shapes=input_shapes, shared_name=service+"_input")
-      out_queue = tf.FIFOQueue(capacity=32, dtypes=output_dtypes, shapes=output_shapes, shared_name=service+"_output")
+      in_queue = tf.FIFOQueue(capacity=32, dtypes=input_dtypes, shapes=input_shapes, shared_name=service_name+"_input")
+      out_queue = tf.FIFOQueue(capacity=32, dtypes=output_dtypes, shapes=output_shapes, shared_name=service_name+"_output")
 
   with tf.device("/job:{cluster_name}/task:{task_idx}".format(cluster_name=cluster_name, task_idx=task_index)): # me
       service_ops, service_init_ops = service.make_graph(in_queue=in_queue,
@@ -114,7 +114,7 @@ def execute(args, modules):
       if len(service_ops) > 0:
           coord = tf.train.Coordinator()
 
-          with quorum(cluster_spec=cluster_spec, task_index=task_index, session=sess) as wait_op:
+          with dist_common.quorum(cluster_spec=cluster_spec, task_index=task_index, session=sess) as wait_op:
               uninitialized_vars = tf.report_uninitialized_variables()
               while len(sess.run(uninitialized_vars)) > 0:
                   log.debug("Waiting for uninitialized variables")
