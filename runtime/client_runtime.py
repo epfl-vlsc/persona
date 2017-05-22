@@ -2,6 +2,7 @@ import os
 import tensorflow as tf
 import shutil
 from . import dist_common
+from .dist_common import cluster_name
 from common import parse
 from tensorflow.contrib.persona import pipeline
 
@@ -19,7 +20,7 @@ def add_default_module_args(parser):
 def execute(args, modules):
   queue_index = args.queue_index
 
-  module = modules[args.command]
+  module = modules[args.client_command]
 
   if hasattr(args, 'service'):
     service_mode = args.service
@@ -36,37 +37,24 @@ def execute(args, modules):
   input_shapes = service.input_shapes()
   output_dtypes = service.output_dtypes()
   output_shapes = service.output_shapes()
+  service_name = service.get_shortname()
 
-  results = []
+  with tf.device("/job:{cluster_name}/task:{queue_idx}".format(cluster_name=cluster_name, queue_idx=queue_index)): # all queues live on the 0th task index
+      in_queue = tf.FIFOQueue(capacity=32, dtypes=input_dtypes, shapes=input_shapes, shared_name=service_name+"_input")
+      out_queue = tf.FIFOQueue(capacity=32, dtypes=output_dtypes, shapes=output_shapes, shared_name=service_name+"_output")
+
+  enqueue_op = in_queue.enqueue_many(vals=(run_arguments,), name=service_name+"_client_enqueue")
+  dequeue_op = out_queue.dequeue_many(n=len(run_arguments))
+
   # run our local graph
-  target
-  with tf.Session(server.target) as sess:
-      if summary:
-          trace_dir = setup_output_dir(dirname=args.local + "_summary")
-          service_ops.append(merged)
-          summary_writer = tf.summary.FileWriter(trace_dir, graph=sess.graph, max_queue=2**20, flush_secs=10**4)
-
-      count = 0
-      sess.run(init_ops)
-      if len(service_init_ops) > 0:
-          sess.run(service_init_ops)
-
-      # its possible the service is a simple run once
-      if len(service_ops) > 0:
-          coord = tf.train.Coordinator()
-          print("Persona dist executor starting {} ...".format(args.command))
-          threads = tf.train.start_queue_runners(coord=coord, sess=sess)
-          while not coord.should_stop():
-              try:
-                  print("Persona dist running round {}".format(count))
-                  result = sess.run(final_op)
-                  count += 1
-                  if summary:
-                      summary_writer.add_summary(result[-1], global_step=count)
-              except tf.errors.OutOfRangeError:
-                  print('Got out of range error!')
-                  break
-          print("Coord requesting stop")
-          coord.request_stop()
-          coord.join(threads, stop_grace_period_secs=10)
-
+  queue_host = args.queue_host
+  queue_port = args.queue_port
+  import ipdb; ipdb.set_trace()
+  target = "grpc://{host}:{port}".format(host=queue_host, port=queue_port)
+  with tf.Session(target=target) as sess:
+      sess.run(enqueue_op)
+      try:
+          results = sess.run(dequeue_op)
+          service.on_finish(args=args, results=results)
+      except tf.errors.OutOfRangeError:
+          log.error("Got out of range error! Session: {}".format(target))

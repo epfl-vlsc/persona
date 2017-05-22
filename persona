@@ -5,7 +5,7 @@ import importlib
 import os
 import sys
 
-from runtime import local_runtime, dist_runtime
+from runtime import local_runtime, dist_runtime, client_runtime
 
 def load_modules():
   module_dir = os.path.dirname(os.path.realpath(__file__))
@@ -57,31 +57,45 @@ def get_args(modules):
 
   # TODO args and implementation for distributed execution
   dist_subparser = subparsers.add_parser("dist", help="Run a TF server and execute a service pulling from shared queues. Not normally called directly.")
-  #dist_subparser = subparsers.add_parser("dist", add_help=False)
   dist_subparsers = dist_subparser.add_subparsers(help="Dist modules:", dest='dist_command')
 
+  client_subparser = subparsers.add_parser("client", help="Run a client...")
+  client_subparsers = client_subparser.add_subparsers(help="Client modules:", dest="client_command")
+
+  # TODO add client subparsing
   for name, mod in modules.items():
     helpmsg = mod.get_tooltip()
-    module_subparser = dist_subparsers.add_parser(name, help=helpmsg)
     if len(mod.get_services()) is 1:
       module_service = mod.get_services()[0]
-      module_service.add_graph_args(parser=module_subparser)
-      dist_runtime.add_default_module_args(parser=module_subparser)
+      if module_service.distributed_capability():
+        dist_module_subparser = dist_subparsers.add_parser(name, help=helpmsg)
+        module_service.add_graph_args(parser=dist_module_subparser)
+        dist_runtime.add_default_module_args(parser=dist_module_subparser)
+        dist_module_subparser.set_defaults(func=dist_runtime.execute)
+
+        client_module_subparser = client_subparsers.add_parser(name, help=helpmsg)
+        module_service.add_run_args(parser=client_module_subparser)
+        client_runtime.add_default_module_args(parser=client_module_subparser)
+        client_module_subparser.set_defaults(func=local_runtime.execute)
     else:
-      module_subparsers = module_subparser.add_subparsers(help="Available services in module: ", dest="service")
-      for module_service in mod.get_services():
+      dist_subparser = dist_subparsers.add_parser(name, help=helpmsg)
+      dist_module_subparsers = dist_subparser.add_subparsers(help="Available services in module: ", dest="service")
+
+      client_subparser = client_subparsers.add_parser(name, help=helpmsg)
+      client_module_subparsers = client_subparser.add_subparsers(help="Available services in module: ", dest="service")
+
+      for module_service in (a for a in mod.get_services() if a.distributed_capability()):
         service_shortname = module_service.get_shortname()
-        service_parser = module_subparsers.add_parser(service_shortname)
-        module_service.add_graph_args(parser=service_parser)
-        dist_runtime.add_default_module_args(parser=service_parser)
-    module_subparser.set_defaults(func=dist_runtime.execute)
 
-  setup_subparser = subparsers.add_parser("setup_cluster", help="Map a multi-service Persona graph onto a Kubernetes cluster")
-  # TODO define args and input formats for the cluster setup
+        dist_service_parser = dist_module_subparsers.add_parser(service_shortname)
+        module_service.add_graph_args(parser=dist_service_parser)
+        dist_runtime.add_default_module_args(parser=dist_service_parser)
 
-  submit_subparser = subparsers.add_parser("submit", help="Submit an AGD dataset for processing on a cluster")
-  submit_subparser.add_argument('agd_metadata_file', metavar='dataset', help="AGD dataset to submit")
-  submit_subparser.add_argument('endpoint', metavar='endpoint', help="Endpoint provided by setup_cluster")
+        client_service_parser = client_module_subparsers.add_parser(service_shortname)
+        module_service.add_run_args(parser=client_service_parser)
+        client_runtime.add_default_module_args(parser=client_service_parser)
+      dist_subparser.set_defaults(func=dist_runtime.execute)
+      client_subparser.set_defaults(func=client_runtime.execute)
 
   args = parser.parse_args()
   return args

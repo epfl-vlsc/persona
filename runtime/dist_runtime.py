@@ -5,13 +5,13 @@ import time
 from tensorflow.contrib.persona import pipeline
 from common.parse import numeric_min_checker
 from . import dist_common
+from .dist_common import cluster_name
 
 import logging
 logging.basicConfig()
 log = logging.getLogger(__file__)
 log.setLevel(logging.DEBUG)
 
-cluster_name = "persona"
 startup_wait_time = 1
 host_re = re.compile("(?P<host>(?:\w+)(?:\.\w+)*):(?P<port>\d+)")
 
