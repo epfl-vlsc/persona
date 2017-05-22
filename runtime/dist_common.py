@@ -52,7 +52,7 @@ def quorum(cluster_spec, task_index, session):
             return tf.FIFOQueue(capacity=num_tasks, dtypes=tf.int32, shared_name="done_queue_{}".format(idx))
 
         this_idx = tf.constant(task_index, dtype=tf.int32)
-        num_tasks = cluster_spec.num_tasks()
+        num_tasks = cluster_spec.num_tasks(job_name=cluster_name)
         for task_idx in cluster_spec.task_indices(cluster_name):
             with tf.device("/job:{cluster_name}/task:{idx}".format(cluster_name=cluster_name,
                                                                    idx=task_idx)):
@@ -65,7 +65,7 @@ def quorum(cluster_spec, task_index, session):
             ti=task_index, all=all_indices
         ))
     this_queue = queue_mapping[task_index][0]
-    this_queue_dequeue = this_queue.dequeue(name="{cluster}_task:{t}_dequeue".format(cluster=cluster_name, t=task_index))
+    this_queue_dequeue = this_queue.dequeue(name="{cluster}_task_{t}_dequeue".format(cluster=cluster_name, t=task_index))
     stop_ops = [a[1] for idx, a in queue_mapping.items() if idx != task_index]
     needed_indices = all_indices.difference({task_index})
 
