@@ -81,12 +81,14 @@ class SortCommonService(Service):
         buf_pool = persona_ops.buffer_pool(size=0, bound=False, name="bufpool")
 
         for a in recs_and_handles:
-            compressed_bufs = [a[0]]
-            for i, buf in enumerate(a[1:]):
+            # out_tuple = [results, base, qual, meta, record_name, first_ord, num_recs, file_name]
+            compressed_bufs = []
+            for i, buf in enumerate(a[:4]):
                 compact = True if i == 1 else False  # bases is always second column
                 compressed_bufs.append(persona_ops.buffer_pair_compressor(buffer_pool=buf_pool, buffer_pair=buf, pack=compact))
 
-            yield compressed_bufs
+            compressed_matrix = tf.stack(compressed_bufs)
+            yield [compressed_matrix] + a[4:]
 
     def make_sorters(self, batch, buffer_list_pool, order_by):
         # FIXME this needs the number of records
@@ -103,7 +105,7 @@ class SortCommonService(Service):
                                   num_records=num_records, name="local_read_agd_sort"), im_name
    
     # chunks_to_merge is matrix of handles
-    def make_merge_pipeline(self, args, chunks_to_merge):
+    def make_merge_pipeline(self, args, record_name, chunks_to_merge):
 
         q = data_flow_ops.FIFOQueue(capacity=100000, # big because who cares
                                     dtypes=[dtypes.int32, dtypes.string, dtypes.string, dtypes.string, dtypes.string],
@@ -126,8 +128,17 @@ class SortCommonService(Service):
         tf.train.queue_runner.add_queue_runner(tf.train.queue_runner.QueueRunner(q, [merge_op]))
    
         # num_recs, results, base, qual, meta
+        num_recs, results, base, qual, meta = q.dequeue()
 
-        return [q.dequeue() for a in range(args.compress_parallel)]
+        record_name_constant = constant_op.constant(record_name)
+        first_ordinal = tf.Variable(-1 * args.chunk, dtype=dtypes.int64, name="first_ordinal")
+        first_ord = first_ordinal.assign_add(math_ops.to_int64(num_recs, name="first_ord_cast_to_64"), use_locking=True)
+        first_ord_str = string_ops.as_string(first_ord, name="first_ord_string")
+        file_name = string_ops.string_join([args.dataset_dir, "/", record_name_constant, first_ord_str], name="file_name_string_joiner")
+       
+        out_tuple = [results, base, qual, meta, record_name, first_ord, num_recs, file_name]
+
+        return out_tuple
         
     def make_sort_pipeline(self, args, input_gen):
 
@@ -220,29 +231,24 @@ class LocalSortService(LocalCommonService):
             writers.append(w)
         return writers
    
-    def make_writers(self, args, record_name, compressed_bufs):
+    def make_writers(self, args, compressed_bufs):
         compressed_buf = pipeline.join(compressed_bufs, capacity=4, multi=True, parallel=1)[0]
-        record_name_constant = constant_op.constant(record_name)
-        num_recs = compressed_buf[0]
-        first_ordinal = tf.Variable(-1 * args.chunk, dtype=dtypes.int64, name="first_ordinal")
-        first_ord = first_ordinal.assign_add(math_ops.to_int64(num_recs, name="first_ord_cast_to_64"), use_locking=True)
-        first_ord_str = string_ops.as_string(first_ord, name="first_ord_string")
-        file_name = string_ops.string_join([args.dataset_dir, "/", record_name_constant, first_ord_str], name="file_name_string_joiner")
-       
-        handle = tf.stack(compressed_buf[1:])
-        write_tuple = [handle, record_name, first_ord, num_recs, file_name]
-       
-
+        
+        # add parallelism here if necessary to saturate write bandwidth
+        # [compressed_matrix, record_name, first_ord, num_recs, file_name]
+      
+        print(compressed_buf)
         # upstream_tensors: a list of tensor tuples of type: buffer_list_handle, record_id, first_ordinal, num_records, file_path
         types = self.records_type_location if args.order_by == location_value else self.records_type_metadata
-        writers = pipeline.local_write_pipeline(upstream_tensors=[write_tuple], compressed=True, record_types=types, name="local_write_pipeline")
+        writers = pipeline.local_write_pipeline(upstream_tensors=[compressed_buf], compressed=True, record_types=types, name="local_write_pipeline")
         
         return writers
 
 
     def make_graph(self, in_queue, args):
 
-        rec_name = args.dataset['records'][0]['path'][:-1] + "out_"
+        rec_name = args.dataset['records'][0]['path'][:-1] + "out_" # assuming path name is chunk_file_{ordinal}
+
         parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(args.sort_read_parallel))
 
         # read_files: [(file_path, (mmaped_file_handles, a gen)) x N]
@@ -257,8 +263,8 @@ class LocalSortService(LocalCommonService):
         inter_file_name = inter_file_paths[-1]
         
         num_inter_files = int(len(args.dataset['records']) / args.column_grouping)
-        #print("num inter files is {}".format(num_inter_files))
 
+        # these two queues form a barrier, to force downstream to wait until all intermediate superchunks are ready for merge
         # wait for num_inter_files
         f = tf.train.batch([inter_file_name], batch_size=num_inter_files)
         # now output them one by one
@@ -267,7 +273,6 @@ class LocalSortService(LocalCommonService):
         # needs to be scalar not shape [1] which seems pretty stupid ...
         full_path_scalar = tf.reshape(full_path, [])
 
-    
         # may need to add disk read parallelism here
         if args.order_by == location_value:
             merge_cols = self.merge_result_columns
@@ -279,11 +284,15 @@ class LocalSortService(LocalCommonService):
         for f in merge_files:
             stacked_chunks.append(tf.stack(f))
 
+        # batch all the intermediate superchunks that are now mmap'd
         chunks_to_merge = tf.train.batch(stacked_chunks, batch_size=num_inter_files)
-        recs_and_handles = self.make_merge_pipeline(args=args, chunks_to_merge=chunks_to_merge)
-       
-        compressed_bufs = list(self.make_compressors(recs_and_handles))
-        writers = list(list(a) for a in self.make_writers(args, rec_name, compressed_bufs))
+        merge_tuple = self.make_merge_pipeline(args=args, chunks_to_merge=chunks_to_merge, record_name=rec_name)
+        # out_tuple = [results, base, qual, meta, record_name, first_ord, num_recs, file_name]
+      
+        compress_queue = pipeline.join(merge_tuple, capacity=4, parallel=args.compress_parallel, multi=False)
+
+        compressed_bufs = list(self.make_compressors(compress_queue))
+        writers = list(list(a) for a in self.make_writers(args, compressed_bufs))
 
         return writers, []
         

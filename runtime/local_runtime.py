@@ -79,7 +79,12 @@ def execute(args, modules):
       count = 0
       sess.run(init_ops)
       if len(service_init_ops) > 0:
-          sess.run(service_init_ops)
+          res = sess.run(service_init_ops)
+          results.append(res)
+          if summary:
+              results.append(res[:-1])
+          else:
+              results.append(res)
 
       # its possible the service is a simple run once
       if len(service_ops) > 0:

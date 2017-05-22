@@ -122,7 +122,9 @@ class SnapCommonService(Service):
 
         aligned_results = pipeline.join(upstream_tensors=aligners, parallel=args.writers,
                                         multi=True, capacity=32, name="aligned_results")
-        return aligned_results, (genome,) # returns [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
+
+        ref_seqs, lens = persona_ops.snap_index_reference_sequences(genome_handle=genome)
+        return aligned_results, (genome, ref_seqs, lens) # returns [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
 
 class CephCommonService(SnapCommonService):
 
@@ -230,15 +232,27 @@ class LocalCommonService(SnapCommonService):
     
     def on_finish(self, args, results):
         # add results column to metadata
+        # add reference data to metadata
         columns = args.dataset['columns']
+        _, ref_seqs, lens = results[0]
+        ref_list = []
+        for i, ref in enumerate(ref_seqs):
+            ref_list.append({'name':ref.decode("utf-8"), 'length':lens[i].item(), 'index':i})
+        args.dataset['reference_contigs'] = ref_list
+        args.dataset['reference'] = args.index_path
+
         if "results" not in columns:
             columns.append('results')
+        for i in range(args.max_secondary):
+          columns.append("secondary{}".format(i))
         args.dataset['columns'] = columns
+
         for f in os.listdir(args.dataset_dir):
             if f.endswith(".json"):
                 metafile = f
                 break
-        with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
+        # was metafile
+        with open(os.path.join(args.dataset_dir, "test.json"), 'w+') as f:
             json.dump(args.dataset, f, indent=4)
 
 
