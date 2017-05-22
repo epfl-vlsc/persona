@@ -1,7 +1,4 @@
-import os
 import tensorflow as tf
-import shutil
-import contextlib
 import argparse
 import re
 import time
