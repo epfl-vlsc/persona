@@ -230,6 +230,8 @@ class LocalCommonService(SnapCommonService):
     def on_finish(self, args, results):
         # add results column to metadata
         # add reference data to metadata
+        # TODO do the same thing for the ceph version
+
         columns = args.dataset['columns']
         _, ref_seqs, lens = results[0]
         ref_list = []
@@ -248,8 +250,7 @@ class LocalCommonService(SnapCommonService):
             if f.endswith(".json"):
                 metafile = f
                 break
-        # was metafile
-        with open(os.path.join(args.dataset_dir, "test.json"), 'w+') as f:
+        with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
             json.dump(args.dataset, f, indent=4)
 
 
