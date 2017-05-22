@@ -5,9 +5,7 @@ import importlib
 import os
 import sys
 
-from runtime import local_runtime
-from runtime import dist_runtime
-
+from runtime import local_runtime, dist_runtime
 
 def load_modules():
   module_dir = os.path.dirname(os.path.realpath(__file__))
@@ -68,18 +66,14 @@ def get_args(modules):
     if len(mod.get_services()) is 1:
       module_service = mod.get_services()[0]
       module_service.add_graph_args(parser=module_subparser)
-      module_subparser.add_argument("-T", "--task-index", type=int, required=True, help="TF Cluster task index")
-      module_subparser.add_argument("-C", "--cluster-def", required=True, nargs='+', help="TF Cluster definition")
-      #module_service.add_run_args(parser=module_subparser)
+      dist_runtime.add_default_module_args(parser=module_subparser)
     else:
       module_subparsers = module_subparser.add_subparsers(help="Available services in module: ", dest="service")
       for module_service in mod.get_services():
         service_shortname = module_service.get_shortname()
         service_parser = module_subparsers.add_parser(service_shortname)
         module_service.add_graph_args(parser=service_parser)
-        service_parser.add_argument("-T", "--task-index", type=int, required=True, help="TF Cluster task index")
-        service_parser.add_argument("-C", "--cluster-def", required=True, nargs='+', help="TF Cluster definition")
-        #module_service.add_run_args(parser=service_parser)
+        dist_runtime.add_default_module_args(parser=service_parser)
     module_subparser.set_defaults(func=dist_runtime.execute)
 
   setup_subparser = subparsers.add_parser("setup_cluster", help="Map a multi-service Persona graph onto a Kubernetes cluster")

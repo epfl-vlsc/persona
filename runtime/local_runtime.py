@@ -2,7 +2,7 @@ import os
 import tensorflow as tf
 import shutil
 from tensorflow.contrib.persona import pipeline
-from modules.common import parse
+from common import parse
 from common import recorder
 import contextlib
 import json
@@ -30,8 +30,11 @@ def create_unique_file(directory, prefix, suffix, start=0):
             return filename
 
 def add_default_module_args(parser):
+    cwd = os.getcwd()
     parser.add_argument("--record", default=False, action='store_true', help="record usage of the running process")
-    parser.add_argument("--record-directory", default=os.path.dirname(os.getcwd()), type=parse.path_exists_checker(), help="directory to store runtime statistics")
+    parser.add_argument("--record-directory", default=cwd, type=parse.path_exists_checker(), help="directory to store runtime statistics")
+    parser.add_argument("--summary", default=False, action="store_true", help="Add TensorFlow summary info to the graph")
+    parser.add_argument("--summary-directory", default=os.path.join(cwd, "traces"), type=parse.path_exists_checker(make_if_empty=True), help="directory to record summary information into")
 
 def execute(args, modules):
   record_stats = args.record

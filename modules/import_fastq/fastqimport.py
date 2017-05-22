@@ -5,7 +5,7 @@ import os
 import errno
 import json
 from ..common.service import Service
-from ..common.parse import numeric_min_checker
+from common.parse import numeric_min_checker
 from tensorflow.python.ops import data_flow_ops, string_ops
 from tensorflow.python.framework import tensor_shape, dtypes
 from tensorflow.python.training import queue_runner
@@ -58,7 +58,6 @@ class ImportFastqService(Service):
         parser.add_argument("-n", "--name", required=True, help="name for the record")
         parser.add_argument("-o", "--out", default=".", help="directory to write the final record to")
         parser.add_argument("-w", "--write", default=1, type=numeric_min_checker(1, "write parallelism"), help="number of parallel writers")
-        parser.add_argument("--summary", default=False, action='store_true', help="run with tensorflow summary nodes")
         parser.add_argument("--paired", default=False, action='store_true', help="interpret fastq files as paired, requires an even number of files for positional args fastq_files")
         parser.add_argument("--compress-parallel", default=1, type=numeric_min_checker(1, "compress parallelism"), help="number of parallel compression pipelines")
         parser.add_argument("fastq_files", nargs="+", help="the fastq file to convert")

@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import print_function
 
-import argparse
 import multiprocessing
 import os
 import shutil
 import json
-import time
 from ..common.service import Service
-from ..common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
+from common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
 
 import tensorflow as tf
 import itertools
@@ -41,7 +39,6 @@ class BWACommonService(Service):
         parser.add_argument("--null", type=float, required=False, help="use the null aligner instead of actually aligning")
         parser.add_argument("--deep-verify", default=False, action='store_true', help="verify record integrity")
         # TODO this is rigid, needs to be changed to get from the queue service!
-        parser.add_argument("--summary", default=False, action="store_true", help="Add TensorFlow summary info to the graph")
         parser.add_argument("--bwa-args", default="", help="BWA algorithm options")
 
     def make_central_pipeline(self, args, input_gen, pass_around_gen):

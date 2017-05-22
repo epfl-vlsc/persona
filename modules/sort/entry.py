@@ -1,7 +1,7 @@
 import os
 from . import merge_sort
 from ..common import service
-from ..common.parse import numeric_min_checker
+from common.parse import numeric_min_checker
 
 class CephSortSingleton(service.ServiceSingleton):
   class_type = merge_sort.CephSortService
@@ -101,8 +101,6 @@ def get_args(subparser):
   cephsubparser.add_argument("-b", "--order-by", default="location", choices=["location", "metadata"], help="sort by this parameter [location | metadata]")
   cephsubparser.add_argument("--output-name", default="sorted", help="name for the output record")
   cephsubparser.add_argument("--chunk", default=2, type=numeric_min_checker(1, "need non-negative chunk size"), help="chunk size for final merge stage")
-  cephsubparser.add_argument("--summary", default=False, action='store_true', help="store summary information")
-  cephsubparser.add_argument("--logdir", default=".", help="Directory to write tensorflow summary data. Default is PWD")
   cephsubparser.add_argument("--output-pool", default="", help="The Ceph cluster pool in which the output dataset should be written")
   cephsubparser.add_argument("--ceph-read-chunk-size", default=(2**26), type=int, help="minimum size to read from ceph storage, in bytes")
   cephsubparser.add_argument("ceph_params", help="Parameters for Ceph Reader")
