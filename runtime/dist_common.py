@@ -89,7 +89,7 @@ def quorum(cluster_spec, task_index, session):
 def make_queue_device_name(cluster_name, queue_index):
     return "/job:{cluster_name}/task:{queue_idx}".format(cluster_name=cluster_name, queue_idx=queue_index)
 
-def make_common_queues(service_name, queue_index, cluster_name, input_dtypes, input_shapes, output_dtypes, output_shapes, in_capacity=4096, out_capacity=4096):
+def make_common_queues(service_name, queue_index, cluster_name, input_dtypes, input_shapes, output_dtypes, output_shapes, in_capacity=32, out_capacity=32):
     log.debug("Making queues for service_name: {}".format(service_name))
     queue_device = make_queue_device_name(cluster_name=cluster_name, queue_index=queue_index)
     input_name = service_name+"_input"

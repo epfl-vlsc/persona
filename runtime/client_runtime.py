@@ -1,6 +1,8 @@
 import os
 import tensorflow as tf
 import shutil
+import contextlib
+import threading
 from . import dist_common
 import time
 from .dist_common import cluster_name
@@ -13,6 +15,17 @@ log = logging.getLogger(__file__)
 log.setLevel(logging.DEBUG)
 
 startup_wait_time = 1
+
+@contextlib.contextmanager
+def enqueue_items(sess, enqueue_all_op, timeout=10):
+    def enqueue_func():
+        sess.run(enqueue_all_op)
+    enqueue_thread = threading.Thread(target=enqueue_func, name="enqueue_function")
+    enqueue_thread.start()
+    yield
+    log.debug("Joining enqueue thread")
+    enqueue_thread.join()
+    log.debug("Enqueue thread is dead")
 
 def add_default_module_args(parser):
     parser.add_argument("-Q", "--queue-index", type=parse.numeric_min_checker(minimum=0, message="queue index must be non-negative"), default=0, help="task index for cluster node that hosts the queues")
@@ -65,14 +78,14 @@ def execute(args, modules):
           log.debug("Waiting for uninitialized variables")
           time.sleep(startup_wait_time)
       log.debug("All variables initialized. Persona dist executor starting {} ...".format(args.command))
-      sess.run(enqueue_op)
-      try:
-          while expected_result_count > 0:
-              next_result = sess.run(dequeue_single_op)
-              # TODO get rid of this!
-              log.debug("Got result: {}".format(next_result))
-              expected_result_count -= 1
-              results.append(next_result)
-          service.on_finish(args=args, results=results)
-      except tf.errors.OutOfRangeError:
-          log.error("Got out of range error! Session: {}".format(target))
+      with enqueue_items(sess=sess, enqueue_all_op=enqueue_op):
+          try:
+              while expected_result_count > 0:
+                  next_result = sess.run(dequeue_single_op)
+                  # TODO get rid of this!
+                  log.debug("Got result: {}".format(next_result))
+                  expected_result_count -= 1
+                  results.append(next_result)
+              service.on_finish(args=args, results=results)
+          except tf.errors.OutOfRangeError:
+              log.error("Got out of range error! Session: {}".format(target))
