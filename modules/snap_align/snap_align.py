@@ -205,7 +205,6 @@ class CephSnapService(CephCommonService):
         output_tensors = (b+(a,) for a,b in zip(writer_outputs, ((key, namespace, num_records, first_ordinal, record_id)
                                                        for _, num_records, first_ordinal, record_id, key, namespace in aligner_results)))
         output_tensors = tuple(output_tensors)
-        import ipdb;ipdb.set_trace()
         return output_tensors, run_first
 
 class LocalCommonService(SnapCommonService):

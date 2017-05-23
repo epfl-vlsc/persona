@@ -49,7 +49,6 @@ def execute(args, modules):
   # run our local graph
   queue_host = args.queue_host
   queue_port = args.queue_port
-  import ipdb; ipdb.set_trace()
   target = "grpc://{host}:{port}".format(host=queue_host, port=queue_port)
   with tf.Session(target=target) as sess:
       sess.run(enqueue_op)

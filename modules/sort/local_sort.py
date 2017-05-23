@@ -158,7 +158,6 @@ def run_merge(args, intermediate_keys, metadata):
             while not coord.should_stop():
                 try:
                     res = sess.run(ops)
-                    #import ipdb; ipdb.set_trace()
                     name_bytes, first_ordinal, num_records = res[:-1] if args.summary else res
                     first_ordinal = int(first_ordinal)
                     num_records = int(num_records)

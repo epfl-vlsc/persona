@@ -47,7 +47,6 @@ class BWACommonService(Service):
         for i in range(args.max_secondary):
             self.write_columns.append('secondary{}'.format(i))
 
-        import ipdb; ipdb.set_trace()
         joiner = tuple(tuple(a) + tuple(b) for a,b in zip(input_gen, pass_around_gen))
         ready_to_process = pipeline.join(upstream_tensors=joiner,
                                          parallel=args.parallel,
@@ -409,7 +408,6 @@ def run_aligner(final_op, indexes, summary, null, metadata_path, max_secondary):
     index_refs = [persona_ops.bwa_index_reference_sequences(indexes[0])]
     
     print(os.getpid())
-    import ipdb; ipdb.set_trace()
 
     with tf.Session() as sess:
         if summary:
@@ -437,9 +435,6 @@ def run_aligner(final_op, indexes, summary, null, metadata_path, max_secondary):
         coord.request_stop()
         coord.join(threads, stop_grace_period_secs=10)
       
-        #print(os.getpid())
-        #import ipdb; ipdb.set_trace()
-
         # now, add the reference info to the metadata file
         print("adding ref data at {}".format(metadata_path))
         refs_out = sess.run(index_refs)[0]
