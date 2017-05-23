@@ -68,10 +68,10 @@ class ImportFastqService(Service):
     def distributed_capability(self):
         return False
 
-    def output_dtypes(self):
+    def output_dtypes(self, args):
         return []
 
-    def output_shapes(self):
+    def output_shapes(self, args):
         return []
 
     def extract_run_args(self, args):

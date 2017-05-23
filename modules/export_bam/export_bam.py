@@ -12,9 +12,9 @@ class BamExportService(Service):
    
     #default inputs
 
-    def output_dtypes(self):
+    def output_dtypes(self, args):
         return []
-    def output_shapes(self):
+    def output_shapes(self, args):
         return []
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two 

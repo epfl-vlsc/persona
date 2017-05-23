@@ -15,11 +15,11 @@ class EchoService(PrintFinish):
     def extract_run_args(self, args):
         return args.strings
 
-    def output_dtypes(self):
-        return self.input_dtypes()
+    def output_dtypes(self, *args, **kwargs):
+        return self.input_dtypes(*args, **kwargs)
 
-    def output_shapes(self):
-        return self.input_shapes()
+    def output_shapes(self, *args, **kwargs):
+        return self.input_shapes(*args, **kwargs)
 
     def add_run_args(self, parser):
         parser.add_argument("strings", nargs="+", help="one or more strings to echo through the system")
@@ -37,14 +37,14 @@ class Incrementer(PrintFinish):
     def extract_run_args(self, args):
         return args.integers
 
-    def input_dtypes(self):
+    def input_dtypes(self, *args, **kwargs):
         return (tf.int64,)
 
-    def output_shapes(self):
-        return self.input_shapes()
+    def output_shapes(self, *args, **kwargs):
+        return self.input_shapes(*args, **kwargs)
 
-    def output_dtypes(self):
-        return self.input_dtypes()
+    def output_dtypes(self, *args, **kwargs):
+        return self.input_dtypes(*args, **kwargs)
 
     def add_run_args(self, parser):
         parser.add_argument("integers", type=int, nargs="+", help="one or more integers to increment")

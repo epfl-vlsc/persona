@@ -201,10 +201,10 @@ class LocalSortService(LocalCommonService):
     def get_shortname(self):
         return "local"
 
-    def output_dtypes(self):
+    def output_dtypes(self, args):
         return ((tf.dtypes.string,) * 4)
 
-    def output_shapes(self):
+    def output_shapes(self, args):
         return (tf.tensor_shape.scalar(),) * 4
 
     def make_inter_writers(self, batch, output_dir, write_parallelism):
@@ -298,11 +298,11 @@ class LocalSortService(LocalCommonService):
         
 class CephCommonService(SortCommonService):
 
-    def input_dtypes(self):
+    def input_dtypes(self, args):
         """ Ceph services require the key and the pool name """
         return [tf.string] * 2
 
-    def input_shapes(self):
+    def input_shapes(self, args):
         """ Ceph services require the key and the pool name """
         return [tf.TensorShape([])] * 2
 
@@ -326,10 +326,10 @@ class CephSortService(CephCommonService):
     def get_shortname(self):
         return "ceph"
 
-    def output_dtypes(self):
+    def output_dtypes(self, args):
         return ((tf.dtypes.string,) * 3) + (tf.dtypes.int32, tf.dtypes.int64, tf.dtypes.string)
 
-    def output_shapes(self):
+    def output_shapes(self, args):
         return (tf.tensor_shape.scalar(),) * 6
 
     def make_graph(self, in_queue, args):
@@ -376,20 +376,3 @@ class CephSortService(CephCommonService):
         output_tensors = (b+(a,) for a,b in zip(writer_outputs, ((key, namespace, num_records, first_ordinal, record_id)
                                                        for _, num_records, first_ordinal, record_id, key, namespace in aligner_results)))
         return output_tensors, run_first
-
-
-class CephNullService(CephCommonService):
-    """ A service to read and write from ceph as if we were a performing real alignment,
-     but it performs no alignment """
-
-    def output_dtypes(self):
-        pass
-
-    def output_shapes(self):
-        pass
-
-    def make_graph(self, in_queue, args):
-        pass
-
-
-

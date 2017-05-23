@@ -20,9 +20,9 @@ class MarkDuplicatesService(Service):
     def get_shortname(self):
         return "markdup"
 
-    def output_dtypes(self):
+    def output_dtypes(self, args):
         return []
-    def output_shapes(self):
+    def output_shapes(self, args):
         return []
     
     def extract_run_args(self, args):

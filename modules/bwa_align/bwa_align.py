@@ -116,11 +116,11 @@ class BWACommonService(Service):
 
 class CephCommonService(BWACommonService):
 
-    def input_dtypes(self):
+    def input_dtypes(self, args):
         """ Ceph services require the key and the pool name """
         return [tf.string] * 2
 
-    def input_shapes(self):
+    def input_shapes(self, args):
         """ Ceph services require the key and the pool name """
         return [tf.TensorShape([])] * 2
 
@@ -145,10 +145,10 @@ class CephBWAService(CephCommonService):
     def get_shortname(self):
         return "ceph"
 
-    def output_dtypes(self):
+    def output_dtypes(self, args):
         return ((tf.dtypes.string,) * 3) + (tf.dtypes.int32, tf.dtypes.int64, tf.dtypes.string)
 
-    def output_shapes(self):
+    def output_shapes(self, args):
         return (tf.tensor_shape.scalar(),) * 6
 
     def make_graph(self, in_queue, args):
@@ -186,20 +186,6 @@ class CephBWAService(CephCommonService):
         return (b+(a,) for a,b in zip(writer_outputs, ((key, pool_name, num_records, first_ordinal, record_id)
                                                        for _, (num_records, first_ordinal, record_id), (key, pool_name) in aligner_results)))
 
-
-class CephNullService(CephCommonService):
-    """ A service to read and write from ceph as if we were a performing real alignment,
-     but it performs no alignment """
-
-    def output_dtypes(self):
-        pass
-
-    def output_shapes(self):
-        pass
-
-    def make_graph(self, in_queue, args):
-        pass
-
 class LocalCommonService(BWACommonService):
     def extract_run_args(self, args):
         dataset_dir = args.dataset_dir
@@ -215,10 +201,10 @@ class LocalBWAService(LocalCommonService):
     def get_shortname(self):
         return "local"
 
-    def output_dtypes(self):
+    def output_dtypes(self, args):
         return ((tf.dtypes.string,) * 2) + (tf.dtypes.int32, tf.dtypes.int64, tf.dtypes.string)
 
-    def output_shapes(self):
+    def output_shapes(self, args):
         return (tf.tensor_shape.scalar(),) * 5
 
     def make_graph(self, in_queue, args):
@@ -273,9 +259,9 @@ class BwaService(Service):
    
     #default inputs
 
-    def output_dtypes(self):
+    def output_dtypes(self, args):
         return []
-    def output_shapes(self):
+    def output_shapes(self, args):
         return []
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two 
