@@ -80,12 +80,15 @@ def execute(args, modules):
   input_shapes = service.input_shapes(args=args)
   output_dtypes = service.output_dtypes(args=args)
   output_shapes = service.output_shapes(args=args)
-  service_name = service.get_shortname()
+  service_name = args.dist_command + "_" + service.get_shortname()
 
-  # TODO better define the capacity
-  with tf.device("/job:{cluster_name}/task:{queue_idx}".format(cluster_name=cluster_name, queue_idx=queue_index)): # all queues live on the 0th task index
-      in_queue = tf.FIFOQueue(capacity=32, dtypes=input_dtypes, shapes=input_shapes, shared_name=service_name+"_input")
-      out_queue = tf.FIFOQueue(capacity=32, dtypes=output_dtypes, shapes=output_shapes, shared_name=service_name+"_output")
+  in_queue, out_queue = dist_common.make_common_queues(service_name=service_name,
+                                                       queue_index=queue_index,
+                                                       cluster_name=cluster_name,
+                                                       input_dtypes=input_dtypes,
+                                                       input_shapes=input_shapes,
+                                                       output_dtypes=output_dtypes,
+                                                       output_shapes=output_shapes)
 
   with tf.device("/job:{cluster_name}/task:{task_idx}".format(cluster_name=cluster_name, task_idx=task_index)): # me
       service_ops, service_init_ops = service.make_graph(in_queue=in_queue,
@@ -96,10 +99,13 @@ def execute(args, modules):
       init_ops = [tf.global_variables_initializer(), tf.local_variables_initializer()]
 
       # TODO should a final join (if necessary) be moved into the service itself?
-      service_sink = pipeline.join(upstream_tensors=service_ops, capacity=32, parallel=1, multi=True)[0]
 
-      final_op = out_queue.enqueue(service_sink)
-      tf.train.add_queue_runner(qr=tf.train.QueueRunner(queue=out_queue, enqueue_ops=(final_op,)))
+      service_sink = pipeline.join(upstream_tensors=service_ops, capacity=32, parallel=1, multi=True, name="sink_join")[0]
+
+  queue_device = dist_common.make_queue_device_name(cluster_name=cluster_name, queue_index=queue_index)
+  with tf.device(queue_device):
+      final_op = out_queue.enqueue(service_sink, name="final_queue_enqueue_task_{}".format(task_index))
+  tf.train.add_queue_runner(qr=tf.train.QueueRunner(queue=out_queue, enqueue_ops=(final_op,)))
 
   # start our local server
   server = tf.train.Server(cluster_spec, config=None, job_name=cluster_name, task_index=task_index)
@@ -113,22 +119,19 @@ def execute(args, modules):
       # its possible the service is a simple run once
       if len(service_ops) > 0:
           coord = tf.train.Coordinator()
+          uninitialized_vars = tf.report_uninitialized_variables()
+          while len(sess.run(uninitialized_vars)) > 0:
+              log.debug("Waiting for uninitialized variables")
+              time.sleep(startup_wait_time)
 
-          with dist_common.quorum(cluster_spec=cluster_spec, task_index=task_index, session=sess) as wait_op:
-              uninitialized_vars = tf.report_uninitialized_variables()
-              while len(sess.run(uninitialized_vars)) > 0:
-                  log.debug("Waiting for uninitialized variables")
-                  time.sleep(startup_wait_time)
-
-              log.debug("All variables initialized. Persona dist executor starting {} ...".format(args.command))
-              threads = tf.train.start_queue_runners(coord=coord, sess=sess)
-              wait_op()
-              log.debug("Got a stop from quorum. Joining...")
-              coord.request_stop()
-              timeout_time=60*3
-              try:
-                  coord.join(threads=threads, stop_grace_period_secs=timeout_time)
-              except RuntimeError:
-                  log.error("Unable to wait for coordinator to stop all threads after {} seconds".format(timeout_time))
-              else:
-                  log.debug("All threads joined and dead")
+          log.debug("All variables initialized. Persona dist executor starting {} ...".format(args.dist_command))
+          threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+          log.debug("Queue runners started. Waiting on coordinator to signal stop...")
+          coord.wait_for_stop()
+          timeout_time=60*3
+          try:
+              coord.join(threads=threads, stop_grace_period_secs=timeout_time)
+          except RuntimeError:
+              log.error("Unable to wait for coordinator to stop all threads after {} seconds".format(timeout_time))
+          else:
+              log.debug("All threads joined and dead")

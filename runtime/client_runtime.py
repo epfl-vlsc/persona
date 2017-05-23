@@ -2,6 +2,7 @@ import os
 import tensorflow as tf
 import shutil
 from . import dist_common
+import time
 from .dist_common import cluster_name
 from common import parse
 from tensorflow.contrib.persona import pipeline
@@ -10,6 +11,8 @@ import logging
 logging.basicConfig()
 log = logging.getLogger(__file__)
 log.setLevel(logging.DEBUG)
+
+startup_wait_time = 1
 
 def add_default_module_args(parser):
     parser.add_argument("-Q", "--queue-index", type=parse.numeric_min_checker(minimum=0, message="queue index must be non-negative"), default=0, help="task index for cluster node that hosts the queues")
@@ -37,23 +40,39 @@ def execute(args, modules):
   input_shapes = service.input_shapes(args=args)
   output_dtypes = service.output_dtypes(args=args)
   output_shapes = service.output_shapes(args=args)
-  service_name = service.get_shortname()
+  service_name = args.client_command + "_" + service.get_shortname()
 
-  with tf.device("/job:{cluster_name}/task:{queue_idx}".format(cluster_name=cluster_name, queue_idx=queue_index)): # all queues live on the 0th task index
-      in_queue = tf.FIFOQueue(capacity=32, shared_name=service_name+"_input", dtypes=input_dtypes, shapes=input_shapes)
-      out_queue = tf.FIFOQueue(capacity=32, shared_name=service_name+"_output", dtypes=output_dtypes, shapes=output_shapes)
+  in_queue, out_queue = dist_common.make_common_queues(service_name=service_name,
+                                                       queue_index=queue_index,
+                                                       cluster_name=cluster_name,
+                                                       input_dtypes=input_dtypes,
+                                                       input_shapes=input_shapes,
+                                                       output_dtypes=output_dtypes,
+                                                       output_shapes=output_shapes)
 
   enqueue_op = in_queue.enqueue_many(vals=(run_arguments,), name=service_name+"_client_enqueue")
-  dequeue_op = out_queue.dequeue_many(n=len(run_arguments))
+  dequeue_single_op = out_queue.dequeue(name="client_dequeue")
+  expected_result_count = len(run_arguments) # FIXME we're just making this assumption for now!
 
   # run our local graph
   queue_host = args.queue_host
   queue_port = args.queue_port
   target = "grpc://{host}:{port}".format(host=queue_host, port=queue_port)
+  results = []
   with tf.Session(target=target) as sess:
+      uninitialized_vars = tf.report_uninitialized_variables()
+      while len(sess.run(uninitialized_vars)) > 0:
+          log.debug("Waiting for uninitialized variables")
+          time.sleep(startup_wait_time)
+      log.debug("All variables initialized. Persona dist executor starting {} ...".format(args.command))
       sess.run(enqueue_op)
       try:
-          results = sess.run(dequeue_op)
+          while expected_result_count > 0:
+              next_result = sess.run(dequeue_single_op)
+              # TODO get rid of this!
+              log.debug("Got result: {}".format(next_result))
+              expected_result_count -= 1
+              results.append(next_result)
           service.on_finish(args=args, results=results)
       except tf.errors.OutOfRangeError:
           log.error("Got out of range error! Session: {}".format(target))

@@ -85,3 +85,16 @@ def quorum(cluster_spec, task_index, session):
     session.run(stop_ops)
     while wait_for_stop():
         pass
+
+def make_queue_device_name(cluster_name, queue_index):
+    return "/job:{cluster_name}/task:{queue_idx}".format(cluster_name=cluster_name, queue_idx=queue_index)
+
+def make_common_queues(service_name, queue_index, cluster_name, input_dtypes, input_shapes, output_dtypes, output_shapes, in_capacity=4096, out_capacity=4096):
+    log.debug("Making queues for service_name: {}".format(service_name))
+    queue_device = make_queue_device_name(cluster_name=cluster_name, queue_index=queue_index)
+    input_name = service_name+"_input"
+    output_name = service_name+"_output"
+    with tf.device(queue_device):
+        in_queue = tf.FIFOQueue(capacity=in_capacity, dtypes=input_dtypes, shapes=input_shapes, shared_name=input_name, name=input_name)
+        out_queue = tf.FIFOQueue(capacity=out_capacity, dtypes=output_dtypes, shapes=output_shapes, shared_name=output_name, name=output_name)
+    return in_queue, out_queue
