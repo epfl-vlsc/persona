@@ -40,8 +40,8 @@ def execute(args, modules):
   service_name = service.get_shortname()
 
   with tf.device("/job:{cluster_name}/task:{queue_idx}".format(cluster_name=cluster_name, queue_idx=queue_index)): # all queues live on the 0th task index
-      in_queue = tf.FIFOQueue(capacity=32, dtypes=input_dtypes, shapes=input_shapes, shared_name=service_name+"_input")
-      out_queue = tf.FIFOQueue(capacity=32, dtypes=output_dtypes, shapes=output_shapes, shared_name=service_name+"_output")
+      in_queue = tf.FIFOQueue(capacity=32, shared_name=service_name+"_input", dtypes=input_dtypes, shapes=input_shapes)
+      out_queue = tf.FIFOQueue(capacity=32, shared_name=service_name+"_output", dtypes=output_dtypes, shapes=output_shapes)
 
   enqueue_op = in_queue.enqueue_many(vals=(run_arguments,), name=service_name+"_client_enqueue")
   dequeue_op = out_queue.dequeue_many(n=len(run_arguments))

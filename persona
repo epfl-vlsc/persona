@@ -29,9 +29,10 @@ def load_modules():
 def get_args(modules):
 
   parent_parser = argparse.ArgumentParser(description="Persona -- High-Performance Bioinformatics",
-                                          formatter_class=argparse.ArgumentDefaultsHelpFormatter, add_help=False)
+                                          formatter_class=argparse.ArgumentDefaultsHelpFormatter, add_help=False,
+                                          conflict_handler='resolve')
 
-  parser = argparse.ArgumentParser()
+  parser = argparse.ArgumentParser(conflict_handler='resolve')
 
   subparsers = parser.add_subparsers(help="Available modules; use $ persona <command> -h for details", dest='command')
 
@@ -39,7 +40,7 @@ def get_args(modules):
   # this is all for local execution
   for name, mod in modules.items():
     helpmsg = mod.get_tooltip()
-    module_subparser = subparsers.add_parser(name, help=helpmsg, parents=[parent_parser])
+    module_subparser = subparsers.add_parser(name, help=helpmsg, parents=[parent_parser], conflict_handler='resolve')
     if len(mod.get_services()) is 1:
       module_service = mod.get_services()[0]
       module_service.add_graph_args(parser=module_subparser)
@@ -49,7 +50,7 @@ def get_args(modules):
       module_subparsers = module_subparser.add_subparsers(help="Available services in module: ", dest="service")
       for module_service in mod.get_services():
         service_shortname = module_service.get_shortname()
-        service_parser = module_subparsers.add_parser(service_shortname)
+        service_parser = module_subparsers.add_parser(service_shortname, conflict_handler='resolve')
         module_service.add_graph_args(parser=service_parser)
         module_service.add_run_args(parser=service_parser)
         local_runtime.add_default_module_args(parser=service_parser)

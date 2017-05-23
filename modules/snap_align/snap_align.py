@@ -18,6 +18,14 @@ class SnapCommonService(Service):
         dataset = args.dataset
         return (a["path"] for a in dataset["records"])
 
+    @staticmethod
+    def add_max_secondary(parser):
+        parser.add_argument("-s", "--max-secondary", type=numeric_min_checker(0, "must have a non-negative number of secondary results"), default=0, help="Max secondary results to store. >= 0 ")
+
+    def add_run_args(self, parser):
+        super().add_run_args(parser=parser)
+        self.add_max_secondary(parser=parser)
+
     def add_graph_args(self, parser):
         # adds the common args to all graphs
         parser.add_argument("-p", "--parallel", type=numeric_min_checker(1, "parallel decompression"), default=2, help="parallel decompression")
@@ -29,10 +37,10 @@ class SnapCommonService(Service):
         parser.add_argument("-c", "--compress", default=False, action='store_true', help="compress the output")
         parser.add_argument("--assemblers", default=1, type=numeric_min_checker(1, "must have at least one assembler node"), help="level of parallelism for assembling records")
         parser.add_argument("--compress-parallel", default=1, type=numeric_min_checker(1, "must have at least one parallel compressor"), help="the parallelism for the output compression pipeline, if set")
-        parser.add_argument("-s", "--max-secondary", type=numeric_min_checker(0, "must have a non-negative number of secondary results"), default=0, help="Max secondary results to store. >= 0 ")
         parser.add_argument("--deep-verify", default=False, action='store_true', help="verify record integrity")
         parser.add_argument("--paired", default=False, action='store_true', help="interpret dataset as interleaved paired dataset")
         parser.add_argument("-i", "--index-path", type=path_exists_checker(), default="/scratch/stuart/ref_index", help="location of the ref index on all machines. Make sure all machines have this path!")
+        self.add_max_secondary(parser=parser)
         parser.add_argument("--snap-args", type=str, default="", help="SNAP algorithm specific args. Pass with enclosing \" \". E.g. \"-om 5 -omax 1\" . See SNAP documentation for all options.")
 
     def make_central_pipeline(self, args, input_gen, pass_around_gen):
