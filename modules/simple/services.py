@@ -54,5 +54,5 @@ class Incrementer(PrintFinish):
 
     def make_graph(self, in_queue, args):
         increment = args.increment
-        incr_op = tf.constant(increment)
-        return ((in_queue.dequeue() + incr_op,),), []
+        incr_op = tf.constant(increment, dtype=tf.int64)
+        return ((tf.to_int64(in_queue.dequeue()) + incr_op,),), []
