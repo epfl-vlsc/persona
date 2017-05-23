@@ -125,13 +125,13 @@ class SnapCommonService(Service):
 
 class CephCommonService(SnapCommonService):
 
-    def input_dtypes(self):
+    def input_dtypes(self, args):
         """ Ceph services require the key and the pool name """
-        return [tf.string] * 2
+        return (tf.string,) * 2
 
-    def input_shapes(self):
+    def input_shapes(self, args):
         """ Ceph services require the key and the pool name """
-        return [tf.TensorShape([])] * 2
+        return (tf.TensorShape([]),) * 2
 
     def extract_run_args(self, args):
         dataset = args.dataset
@@ -153,11 +153,11 @@ class CephSnapService(CephCommonService):
     def get_shortname(self):
         return "ceph"
 
-    def output_dtypes(self):
-        return ((tf.dtypes.string,) * 3) + (tf.dtypes.int32, tf.dtypes.int64, tf.dtypes.string)
+    def output_dtypes(self, args):
+        return ((tf.string,) * 2) + (tf.int32, tf.int64) + ((tf.string,) * 2)
 
-    def output_shapes(self):
-        return (tf.tensor_shape.scalar(),) * 6
+    def output_shapes(self, args):
+        return (tf.TensorShape([]),) * 5 + (tf.TensorShape((args.max_secondary+1,)),)
 
     def make_graph(self, in_queue, args):
         """
@@ -166,6 +166,8 @@ class CephSnapService(CephCommonService):
         :return: [ key, namespace, num_records, first_ordinal, record_id, full_path ]
         """
         if args.ceph_pool_name is None:
+            if not hasattr(args, "dataset"):
+                raise Exception("Must specify pool name manually if dataset isn't specified")
             dataset = args.dataset
             pool_key = "ceph_pool"
             if pool_key not in dataset:
@@ -192,31 +194,19 @@ class CephSnapService(CephCommonService):
         # ceph writer pipeline wants (key, first_ord, num_recs, namespace, record_id, column_handle)
         # type of aligned_results_queue: [(key, namespace, num_records, first_ordinal, record_id, buffer_list_ref) x N]
         # this happens to match the iterator in ceph_aligner_write_pipeline, but otherwise you can mix like above
-        writer_outputs = pipeline.ceph_aligner_write_pipeline(
+        writer_outputs = (tuple(a) for a in pipeline.ceph_aligner_write_pipeline(
             upstream_tensors=to_writer_gen,
             user_name=args.ceph_user_name,
             cluster_name=args.ceph_cluster_name,
             ceph_conf_path=args.ceph_conf_path,
             compressed=args.compress,
             pool_name=args.ceph_pool_name
-        )
+        ))
         output_tensors = (b+(a,) for a,b in zip(writer_outputs, ((key, namespace, num_records, first_ordinal, record_id)
                                                        for _, num_records, first_ordinal, record_id, key, namespace in aligner_results)))
+        output_tensors = tuple(output_tensors)
+        import ipdb;ipdb.set_trace()
         return output_tensors, run_first
-
-
-class CephNullService(CephCommonService):
-    """ A service to read and write from ceph as if we were a performing real alignment,
-     but it performs no alignment """
-
-    def output_dtypes(self):
-        pass
-
-    def output_shapes(self):
-        pass
-
-    def make_graph(self, in_queue, args):
-        pass
 
 class LocalCommonService(SnapCommonService):
     def extract_run_args(self, args):
@@ -246,13 +236,11 @@ class LocalCommonService(SnapCommonService):
           columns.append("secondary{}".format(i))
         args.dataset['columns'] = columns
 
-        for f in os.listdir(args.dataset_dir):
-            if f.endswith(".json"):
-                metafile = f
+        for metafile in os.listdir(args.dataset_dir):
+            if metafile.endswith(".json"):
+                with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
+                    json.dump(args.dataset, f, indent=4)
                 break
-        with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
-            json.dump(args.dataset, f, indent=4)
-
 
 class LocalSnapService(LocalCommonService):
     """ A service to use the SNAP aligner with a local dataset """
@@ -260,38 +248,29 @@ class LocalSnapService(LocalCommonService):
     def get_shortname(self):
         return "local"
 
-    def output_dtypes(self):
-        return ((tf.dtypes.string,) * 2) + (tf.dtypes.int32, tf.dtypes.int64, tf.dtypes.string)
+    def output_dtypes(self, args):
+        return (tf.string, tf.int32, tf.int64, tf.string, tf.string)
 
-    def output_shapes(self):
-        return (tf.tensor_shape.scalar(),) * 5
+    def output_shapes(self, args):
+        return (tf.TensorShape([]),) * 4 + (tf.TensorShape([args.max_secondary+1]),)
 
     def make_graph(self, in_queue, args):
         parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(args.enqueue))
         # read_files: [(file_path, (mmaped_file_handles, a gen)) x N]
         read_files = tuple(tf.tuple((path_base,) + tuple(read_gen)) for path_base, read_gen in zip(parallel_key_dequeue, pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=self.columns)))
         # need to use tf.tuple to make sure that these are both made ready at the same time
-        to_central_gen = tuple(a[1:] for a in read_files)
-        pass_around_gen = tuple((a[0],) for a in read_files)
+        to_central_gen = (a[1:] for a in read_files)
+        pass_around_gen = ((a[0],) for a in read_files)
 
         aligner_results, run_first = tuple(self.make_central_pipeline(args=args,
                                                                       input_gen=to_central_gen,
                                                                       pass_around_gen=pass_around_gen))
 
         to_writer_gen = tuple((buffer_list_handle, record_id, first_ordinal, num_records, file_basename) for buffer_list_handle, num_records, first_ordinal, record_id, file_basename in aligner_results)
-        written_records = tuple(tuple(a) for a in pipeline.local_write_pipeline(upstream_tensors=to_writer_gen, compressed=args.compress, record_types=self.write_columns))
-        final_output_gen = zip(written_records, ((record_id, first_ordinal, num_records, file_basename) for _, num_records, first_ordinal, record_id, file_basename in aligner_results))
-        return (b+(a,) for a,b in final_output_gen), run_first
-
-class LocalNullService(LocalCommonService):
-    """ A service to read and write from a local dataset as if we were a performing real alignment,
-     but it performs no alignment """
-
-    def output_dtypes(self):
-        pass
-
-    def output_shapes(self):
-        pass
+        written_records = (tuple(a) for a in pipeline.local_write_pipeline(upstream_tensors=to_writer_gen, compressed=args.compress, record_types=self.write_columns))
+        final_output_gen = zip(written_records, ((record_id, num_records, first_ordinal, file_basename) for _, num_records, first_ordinal, record_id, file_basename in aligner_results))
+        output = (b+(a,) for a,b in final_output_gen)
+        return output, run_first
 
 class OldCephSnapService(Service):
 

@@ -33,10 +33,10 @@ def execute(args, modules):
     raise Exception("Service {} does not support distributed execution".format(args.service))
 
   run_arguments = tuple(service.extract_run_args(args=args))
-  input_dtypes = service.input_dtypes()
-  input_shapes = service.input_shapes()
-  output_dtypes = service.output_dtypes()
-  output_shapes = service.output_shapes()
+  input_dtypes = service.input_dtypes(args=args)
+  input_shapes = service.input_shapes(args=args)
+  output_dtypes = service.output_dtypes(args=args)
+  output_shapes = service.output_shapes(args=args)
   service_name = service.get_shortname()
 
   with tf.device("/job:{cluster_name}/task:{queue_idx}".format(cluster_name=cluster_name, queue_idx=queue_index)): # all queues live on the 0th task index

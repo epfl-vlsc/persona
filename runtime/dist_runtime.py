@@ -76,10 +76,10 @@ def execute(args, modules):
       # will throw an exception if not found
       cluster_spec.task_address(job_name=cluster_name, task_index=idx)
 
-  input_dtypes = service.input_dtypes()
-  input_shapes = service.input_shapes()
-  output_dtypes = service.output_dtypes()
-  output_shapes = service.output_shapes()
+  input_dtypes = service.input_dtypes(args=args)
+  input_shapes = service.input_shapes(args=args)
+  output_dtypes = service.output_dtypes(args=args)
+  output_shapes = service.output_shapes(args=args)
   service_name = service.get_shortname()
 
   # TODO better define the capacity

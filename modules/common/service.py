@@ -7,19 +7,19 @@ class Service:
     def get_shortname(self):
         raise NotImplementedError
 
-    def input_dtypes(self):
+    def input_dtypes(self, args):
         """ Required input queue types. Default string """
         return [tf.string]
 
-    def input_shapes(self):
+    def input_shapes(self, args):
         """ Required input queue shape. Default scalar """
         return [tf.TensorShape([])]
 
-    def output_dtypes(self):
+    def output_dtypes(self, args):
         """ Required output queue types """
         raise NotImplementedError
 
-    def output_shapes(self):
+    def output_shapes(self, args):
         """ Required output queue shapes """
         raise NotImplementedError
 
