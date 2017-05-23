@@ -54,5 +54,10 @@ class Incrementer(PrintFinish):
 
     def make_graph(self, in_queue, args):
         increment = args.increment
-        incr_op = tf.constant(increment, dtype=tf.int64)
-        return ((tf.to_int64(in_queue.dequeue()) + incr_op,),), []
+        incr_by = tf.constant(increment, dtype=tf.int64)
+        incr_op = tf.to_int64(in_queue.dequeue()) + incr_by
+        ready_to_process = pipeline.join(upstream_tensors=(incr_op,),
+                                         parallel=1,
+                                         capacity=1,
+                                         multi=False, name="ready_to_process")
+        return (ready_to_process,), []
