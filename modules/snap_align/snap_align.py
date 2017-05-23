@@ -256,7 +256,7 @@ class LocalSnapService(LocalCommonService):
     def make_graph(self, in_queue, args):
         parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(args.enqueue))
         # read_files: [(file_path, (mmaped_file_handles, a gen)) x N]
-        read_files = tuple(tf.tuple((path_base,) + tuple(read_gen)) for path_base, read_gen in zip(parallel_key_dequeue, pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=self.columns)))
+        read_files = tuple((path_base,) + tuple(read_gen) for path_base, read_gen in zip(parallel_key_dequeue, pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=self.columns)))
         # need to use tf.tuple to make sure that these are both made ready at the same time
         to_central_gen = (a[1:] for a in read_files)
         pass_around_gen = ((a[0],) for a in read_files)
