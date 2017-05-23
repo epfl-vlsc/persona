@@ -19,9 +19,13 @@ def run():
     cluster_spec.task_address(job_name=cluster_name, task_index=queue_index)
     server = tf.train.Server(cluster_spec, config=None, job_name=cluster_name, task_index=queue_index)
     log.debug("Starting queue host server")
+    coord = tf.train.Coordinator()
     with tf.Session(server.target) as sess:
-        with dist_common.quorum(cluster_spec=cluster_spec, task_index=queue_index, session=sess) as wait_op:
-            wait_op()
+        threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+        coord.wait_for_stop()
+        log.info("Queue service shutting down after coordinator requested stop")
+        coord.join(threads=threads)
+        log.debug("All threads shut down")
 
 if __name__ == "__main__":
     run()
