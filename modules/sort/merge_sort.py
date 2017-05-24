@@ -32,6 +32,8 @@ class SortCommonService(Service):
                             {"type": "structured", "extension": "results"},
                             )
 
+    inter_file_name = "intermediate_file"
+
     def extract_run_args(self, args):
         dataset = args.dataset
         recs = [ a["path"] for a in dataset["records"] ]
@@ -190,9 +192,19 @@ class LocalCommonService(SortCommonService):
         parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), required=True, help="Directory containing ALL of the chunk files")
     
     def on_finish(self, args, results):
-        # add results column to metadata
         # remove the intermediate files
-        print("results were {}".format(results))
+        for f in os.listdir(args.dataset_dir):
+            if self.inter_file_name in f:
+                os.remove(os.path.join(args.dataset_dir, f))
+
+        # add or change the sort order 
+        args.dataset['sort'] = args.order_by
+        for metafile in os.listdir(args.dataset_dir):
+            if metafile.endswith(".json"):
+                with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
+                    json.dump(args.dataset, f, indent=4)
+                break
+        #print("results were {}".format(results))
         return
 
 class LocalSortService(LocalCommonService):
@@ -247,7 +259,8 @@ class LocalSortService(LocalCommonService):
 
     def make_graph(self, in_queue, args):
 
-        rec_name = args.dataset['records'][0]['path'][:-1] + "out_" # assuming path name is chunk_file_{ordinal}
+        # TODO remove the _out when we are satisfied it works correctly
+        rec_name = args.dataset['records'][0]['path'][:-1] # assuming path name is chunk_file_{ordinal}
 
         parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(args.sort_read_parallel))
 
