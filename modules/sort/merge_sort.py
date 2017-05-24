@@ -198,7 +198,7 @@ class LocalCommonService(SortCommonService):
                 os.remove(os.path.join(args.dataset_dir, f))
 
         # add or change the sort order 
-        args.dataset['sort'] = args.order_by
+        args.dataset['sort'] = 'coordinate' if args.order_by == location_value else 'queryname'
         for metafile in os.listdir(args.dataset_dir):
             if metafile.endswith(".json"):
                 with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:

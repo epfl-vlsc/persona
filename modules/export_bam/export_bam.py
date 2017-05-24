@@ -45,7 +45,7 @@ class ExportBamService(Service):
 
         ops, run_once = export_bam(in_queue, args)
 
-        return ops, run_once
+        return [ops], run_once
 
 def export_bam(in_queue, args):
   manifest = args.dataset
@@ -56,8 +56,7 @@ def export_bam(in_queue, args):
   #bp_handle = persona_ops.buffer_pool(size=10, bound=False, name="buf_pool")
   #mmap_pool = persona_ops.m_map_pool(size=10,  bound=False, name="file_mmap_buffer_pool")
   
-  local_dir = os.path.dirname(args.dataset)
-  columns = ["base", "qual", "meta", "results"]
+  columns = ["base", "qual", "metadata", "results"]
   num_secondary = 0
   for column in manifest['columns']:
     if 'secondary' in column:
@@ -73,7 +72,7 @@ def export_bam(in_queue, args):
 
   result_chunk_list = [ list(c) for c in result_chunks ]
 
-  to_parse = pipeline.join(upstream_tensors=result_chunk_list, parallel=args.parse_parallel, multi=True, capacity=8)
+  to_parse = pipeline.join(upstream_tensors=result_chunk_list, parallel=args.parallel_parse, multi=True, capacity=8)
 
   parsed_results = pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=to_parse)
 
@@ -83,14 +82,14 @@ def export_bam(in_queue, args):
 
   # base, qual, meta, result, [secondary], num_recs, first_ord, record_id
 
-  bases, quals, meta, results
-  bases = parsed_result[0]
-  quals = parsed_result[1]
-  meta = parsed_result[2]
+  handles = parsed_result[0]
+  bases = handles[0]
+  quals = handles[1]
+  meta = handles[2]
   # give a matrix of all the result columns
-  results = tf.stack(parsed_result[3:4+num_secondary])
-  num_recs = parsed_result[-3]
-  first_ord = parsed_result[-2]
+  results = tf.stack(handles[3:])
+  num_recs = parsed_result[1]
+  first_ord = parsed_result[2]
 
   if args.output_path == "":
     output_path = manifest['name'] + ".bam"
@@ -100,9 +99,9 @@ def export_bam(in_queue, args):
   ref_lens = []
   ref_seqs = []
 
-  for ref_seq, ref_len in manifest['reference']:
-    ref_lens.append(ref_len)
-    ref_seqs.append(ref_seq)
+  for contig in manifest['reference_contigs']:
+    ref_lens.append(contig['length'])
+    ref_seqs.append(contig['name'])
 
   sort = manifest['sort'] if 'sort' in manifest else 'unsorted'
 
