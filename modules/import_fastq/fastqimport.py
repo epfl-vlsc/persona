@@ -104,12 +104,12 @@ class ImportFastqService(Service):
         }
 
         reader = read_pipeline(fastq_file=files, args=args)
-        converters = list(conversion_pipeline(queued_fastq=reader, chunk_size=args.chunk, 
-                convert_parallelism=args.parallel_conversion, args=args))
+        converters = tuple(conversion_pipeline(queued_fastq=reader, chunk_size=args.chunk,
+                                               convert_parallelism=args.parallel_conversion, args=args))
 
-        compressors = list(compress_pipeline(converters=converters, compress_parallelism=args.compress_parallel))
+        compressors = tuple(compress_pipeline(converters=converters, compress_parallelism=args.compress_parallel))
 
-        writers = list(writer_pipeline(compressors, args.write, args.name, self.outdir))
+        writers = tuple(writer_pipeline(compressors, args.write, args.name, self.outdir))
         #final = pipeline.join(upstream_tensors=writers, capacity=8, parallel=1, multi=True)[0]
 
         return writers, []
@@ -193,26 +193,23 @@ def writer_pipeline(compressors, write_parallelism, record_id, output_dir):
         yield base_path, qual_path, meta_path, first_ordinal, num_recs
 
 def conversion_pipeline(queued_fastq, chunk_size, convert_parallelism, args):
+    fastq_read_pool = persona_ops.fastq_read_pool(size=0, bound=False, name="fastq_read_pool")
+
     if args.paired:
         q = data_flow_ops.FIFOQueue(capacity=32, # big because who cares
                                     dtypes=[dtypes.string, dtypes.string, dtypes.int64, dtypes.int64],
                                     shapes=[tensor_shape.vector(2), tensor_shape.vector(2), tensor_shape.scalar(), tensor_shape.scalar()],
                                     name="chunked_output_queue")
+        chunker = persona_ops.fastq_interleaved_chunker(chunk_size=chunk_size, queue_handle=q.queue_ref,
+                                                        fastq_file_0=queued_fastq[0], fastq_file_1=queued_fastq[1],
+                                                        fastq_pool=fastq_read_pool)
     else:
         q = data_flow_ops.FIFOQueue(capacity=32, # big because who cares
                                     dtypes=[dtypes.string, dtypes.int64, dtypes.int64],
                                     shapes=[tensor_shape.vector(2), tensor_shape.scalar(), tensor_shape.scalar()],
                                     name="chunked_output_queue")
-
-    fastq_read_pool = persona_ops.fastq_read_pool(size=0, bound=False, name="fastq_read_pool")
-
-    if args.paired:
-        chunker = persona_ops.fastq_interleaved_chunker(chunk_size=chunk_size, queue_handle=q.queue_ref,
-                                     fastq_file_0=queued_fastq[0], fastq_file_1=queued_fastq[1], 
-                                     fastq_pool=fastq_read_pool)
-    else:
         chunker = persona_ops.fastq_chunker(chunk_size=chunk_size, queue_handle=q.queue_ref,
-                                     fastq_file=queued_fastq, fastq_pool=fastq_read_pool)
+                                            fastq_file=queued_fastq, fastq_pool=fastq_read_pool)
 
     queue_runner.add_queue_runner(queue_runner.QueueRunner(q, [chunker]))
     bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="conversion_buffer_pool")
@@ -227,6 +224,3 @@ def conversion_pipeline(queued_fastq, chunk_size, convert_parallelism, args):
             base, qual, meta = persona_ops.agd_converter(buffer_pair_pool=bpp, input_data=fastq_resource,
                     name="agd_converter")
             yield base, qual, meta, first_ordinal, num_recs
-
-
-
