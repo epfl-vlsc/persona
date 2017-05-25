@@ -78,7 +78,6 @@ class ImportFastqService(Service):
         # the fastq file names
         if args.paired and not (len(args.fastq_files) % 2 == 0):
             raise Exception("Paired conversion requires even number of fastq files.")
-        print(args.fastq_files)
         return args.fastq_files
 
     def make_graph(self, in_queue, args):
