@@ -33,8 +33,8 @@ class ExportBamService(Service):
         # adds the common args to all graphs
         parser.add_argument("-p", "--parallel-parse", default=1, help="Parallelism of decompress stage")
         parser.add_argument("-o", "--output-path", default="", help="Output bam file path")
-        parser.add_argument("-t", "--threads", type=int, default=multiprocessing.cpu_count(), 
-          help="Number of threads to use for compression [{}]".format(multiprocessing.cpu_count()))
+        parser.add_argument("-t", "--threads", type=int, default=multiprocessing.cpu_count()-1, 
+          help="Number of threads to use for compression [{}]".format(multiprocessing.cpu_count()-1))
         parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), required=True, help="Directory containing ALL of the chunk files")
 
     def make_graph(self, in_queue, args):

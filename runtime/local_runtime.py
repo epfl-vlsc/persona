@@ -99,7 +99,7 @@ def execute(args, modules):
               threads = tf.train.start_queue_runners(coord=coord, sess=sess)
               while not coord.should_stop():
                   try:
-                      print("Running round {}".format(count))
+                      #print("Running round {}".format(count))
                       result = sess.run(service_sink)
                       count += 1
                       if summary:
