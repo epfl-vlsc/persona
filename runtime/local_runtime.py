@@ -62,7 +62,7 @@ def execute(args, modules):
 
   has_service_ops = len(service_ops) > 0
   if has_service_ops:
-      service_sink = pipeline.join(upstream_tensors=service_ops, capacity=64, parallel=1, multi=True, name="global_sink_queue")[0]
+      service_sink = pipeline.join(upstream_tensors=service_ops, capacity=64, parallel=1, multi=True, name="global_sink_queue")
 
   init_ops = [tf.global_variables_initializer(), tf.local_variables_initializer()]
 
@@ -99,7 +99,7 @@ def execute(args, modules):
               threads = tf.train.start_queue_runners(coord=coord, sess=sess)
               while not coord.should_stop():
                   try:
-                      #print("Running round {}".format(count))
+                      print("Running round {}".format(count))
                       result = sess.run(service_sink)
                       count += 1
                       if summary:

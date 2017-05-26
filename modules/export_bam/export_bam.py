@@ -31,7 +31,7 @@ class ExportBamService(Service):
     
     def add_graph_args(self, parser):
         # adds the common args to all graphs
-        parser.add_argument("-p", "--parallel-parse", default=2, help="Parallelism of decompress stage")
+        parser.add_argument("-p", "--parallel-parse", default=1, help="Parallelism of decompress stage")
         parser.add_argument("-o", "--output-path", default="", help="Output bam file path")
         parser.add_argument("-t", "--threads", type=int, default=multiprocessing.cpu_count(), 
           help="Number of threads to use for compression [{}]".format(multiprocessing.cpu_count()))
