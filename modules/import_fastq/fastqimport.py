@@ -116,7 +116,7 @@ class ImportFastqService(Service):
     
     def on_finish(self, args, results):
         for res in results:
-            base, qual, meta, first_ordinal, num_records = res
+            base, qual, meta, first_ordinal, num_records = res[0]
             first_ordinal = int(first_ordinal)
             num_records = int(num_records)
             name = os.path.basename(os.path.splitext(base.decode())[0])
