@@ -56,7 +56,7 @@ class FlagstatService(Service):
                                        parallel_parse=args.parse_parallel, 
                                        parallel_write=args.write_parallel)
         run_once = []
-        return op, run_once 
+        return [[op]], run_once 
 
 def _make_writers(compressed_batch, output_dir, write_parallelism):
 
@@ -115,9 +115,10 @@ def agd_flagstat_local(in_queue, outdir=None, parallel_parse=1, parallel_write=1
     print(result_buf)
 
     # bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="output_buffer_pair_pool")
-    # result_out = persona_ops.agd_flagstat(results_handle=result_buf, num_records=num_results, 
-            # buffer_pair_pool=bpp, name="markdupsop")
-    persona_ops.agd_flagstat(results_handle=result_buf, num_records=num_results, name="flagstat")
+    # result_out = persona_ops.agd_flagstat(results_handle=result_buf, num_records=num_results, buffer_pair_pool=bpp, name="markdupsop")
+    # result = persona_ops.agd_flagstat(results_handle=result_buf, num_records=num_results, name="flagstat")
+    result_out = persona_ops.agd_flagstat(results_handle=result_buf, num_records=num_results, name="flagstat")
+
 
     # result_to_write = pipeline.join([result_out, num_results, first_ord, record_id], parallel=parallel_write, 
     #     capacity=8, multi=False)
@@ -130,6 +131,6 @@ def agd_flagstat_local(in_queue, outdir=None, parallel_parse=1, parallel_write=1
     # all_written_keys = pipeline.join(recs, parallel=1, capacity=8, multi=False)
 
     # return all_written_keys
-    return
+    return result_out
   
   
