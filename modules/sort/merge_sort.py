@@ -75,7 +75,7 @@ class SortCommonService(Service):
                           type=numeric_min_checker(minimum=1, message="sorting pipeline min"))
         parser.add_argument("-w", "--write-parallel", default=1, help="number of writing pipelines to run in parallel",
                           type=numeric_min_checker(minimum=1, message="writing pipeline min"))
-        parser.add_argument("--chunk", default=4, type=numeric_min_checker(1, "need non-negative chunk size"), help="chunk size for final merge stage")
+        parser.add_argument("--chunk", default=100000, type=numeric_min_checker(1, "need non-negative chunk size"), help="chunk size for final merge stage")
         parser.add_argument("-b", "--order-by", default="location", choices=["location", "metadata"], help="sort by this parameter [location | metadata]")
 
     def make_compressors(self, recs_and_handles):
@@ -86,7 +86,7 @@ class SortCommonService(Service):
             # out_tuple = [results, base, qual, meta, record_name, first_ord, num_recs, file_name]
             compressed_bufs = []
             for i, buf in enumerate(a[:4]):
-                compact = True if i == 1 else False  # bases is always second column
+                compact = i == 1 # bases is always second column
                 compressed_bufs.append(persona_ops.buffer_pair_compressor(buffer_pool=buf_pool, buffer_pair=buf, pack=compact))
 
             compressed_matrix = tf.stack(compressed_bufs)
@@ -205,7 +205,6 @@ class LocalCommonService(SortCommonService):
                     json.dump(args.dataset, f, indent=4)
                 break
         #print("results were {}".format(results))
-        return
 
 class LocalSortService(LocalCommonService):
     """ A service to use the SNAP aligner with a local dataset """
@@ -214,13 +213,15 @@ class LocalSortService(LocalCommonService):
         return "local"
 
     def output_dtypes(self, args):
-        return ((tf.dtypes.string,) * 4)
+        return (tf.dtypes.string,)
 
     def output_shapes(self, args):
-        return (tf.tensor_shape.scalar(),) * 4
+        return (tf.tensor_shape.scalar(),)
+
+    def distributed_capability(self):
+        return False
 
     def make_inter_writers(self, batch, output_dir, write_parallelism):
-
         single = pipeline.join(batch, parallel=write_parallelism, capacity=8, multi=True, name="writer_queue")
         types = ["base_compact", "text", "text", "structured"]
       
