@@ -1,21 +1,32 @@
-
-from __future__ import print_function
-
 import os
 import json
-import multiprocessing
 from ..common.service import Service
+from ..common import bridge
 from common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
 from tensorflow.python.ops import io_ops, variables, string_ops, array_ops, data_flow_ops, math_ops, control_flow_ops
 from tensorflow.python.framework import ops, tensor_shape, common_shapes, constant_op, dtypes
 
 import tensorflow as tf
-import itertools
 
 persona_ops = tf.contrib.persona.persona_ops()
 from tensorflow.contrib.persona import queues, pipeline
 
 location_value = "location"
+
+def name_generator(base_name, separator="-"):
+    """
+    Given a basename, defines an op that will generate intermediate unique names
+    based on the base_name parameter.
+
+    The suffix will be separated with `separator`, and will start counting from 0.
+    """
+    start_var = variables.Variable(-1)
+    incr_var = start_var.assign_add(1)
+    var_as_string = string_ops.as_string(incr_var)
+    if not isinstance(base_name, ops.Tensor):
+        base_name = tf.constant(str(base_name), dtype=dtypes.string,
+                                shape=tensor_shape.scalar(), name="name_generator_base")
+    return tf.string_join([base_name, var_as_string], separator=separator, name="name_generator")
 
 class SortCommonService(Service):
     columns = ["base", "qual", "metadata", "results"]
@@ -46,22 +57,6 @@ class SortCommonService(Service):
         self.columns = dataset['columns']
         print("sorting records: {} with columns {}".format(recs, self.columns))
         return recs
-
-    def name_generator(self, base_name, separator="-"):
-        """
-        Given a basename, defines an op that will generate intermediate unique names
-        based on the base_name parameter.
-
-        The suffix will be separated with `separator`, and will start counting from 0.
-        """
-        start_var = variables.Variable(-1)
-        incr_var = start_var.assign_add(1)
-        var_as_string = string_ops.as_string(incr_var)
-        if not isinstance(base_name, ops.Tensor):
-            base_name = tf.constant(str(base_name), dtype=dtypes.string,
-                                             shape=tensor_shape.scalar(), name="name_generator_base")
-        return tf.string_join([base_name, var_as_string], separator=separator, name="name_generator")
-
 
     def add_graph_args(self, parser):
         # adds the common args to all graphs
@@ -161,7 +156,7 @@ class SortCommonService(Service):
 
         ready = tf.train.batch_join(chunks_and_recs, batch_size=args.column_grouping, allow_smaller_final_batch=True)
        
-        name_queue = pipeline.join([self.name_generator("intermediate_file")], parallel=args.sort_parallel, capacity=8, multi=False, name="inter_file_gen_q")
+        name_queue = pipeline.join([name_generator("intermediate_file")], parallel=args.sort_parallel, capacity=8, multi=False, name="inter_file_gen_q")
     
         bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="local_read_buffer_pair_pool")
 

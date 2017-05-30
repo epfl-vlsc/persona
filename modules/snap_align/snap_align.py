@@ -136,11 +136,11 @@ class SnapCommonService(Service):
 class CephCommonService(SnapCommonService):
 
     def input_dtypes(self, args):
-        """ Ceph services require the key and the pool name """
+        """ Ceph services require the key and the namespace name """
         return (tf.string,) * 2
 
     def input_shapes(self, args):
-        """ Ceph services require the key and the pool name """
+        """ Ceph services require the key and the namespace name """
         return (tf.TensorShape([]),) * 2
 
     def extract_run_args(self, args):
