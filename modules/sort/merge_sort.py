@@ -54,13 +54,16 @@ class VerifySortService(Service):
         first_record = records[0]
         chunk_size = first_record["last"] - first_record["first"]
         chunknames = []
+        lens = []
         for record in records:
             chunknames.append(record['path'])
+            lens.append(int(record['last']) - int(record['first']))
 
+        print(lens)
         path = tf.constant(args.dataset_dir + '/')
         names = tf.constant(chunknames)
-        size = tf.constant(chunk_size)
-        output = persona_ops.agd_verify_sort(path, names, size)
+        sizes = tf.constant(lens)
+        output = persona_ops.agd_verify_sort(path, names, sizes)
 
         return [], [output]
 
@@ -151,7 +154,7 @@ class SortCommonService(Service):
 
         record_name_constant = constant_op.constant(record_name)
         first_ordinal = tf.Variable(-1 * args.chunk, dtype=dtypes.int64, name="first_ordinal")
-        first_ord = first_ordinal.assign_add(math_ops.to_int64(num_recs, name="first_ord_cast_to_64"), use_locking=True)
+        first_ord = first_ordinal.assign_add(math_ops.to_int64(args.chunk, name="first_ord_cast_to_64"), use_locking=True)
         first_ord_str = string_ops.as_string(first_ord, name="first_ord_string")
         file_name = string_ops.string_join([args.dataset_dir, "/", record_name_constant, first_ord_str], name="file_name_string_joiner")
        
@@ -216,10 +219,13 @@ class LocalCommonService(SortCommonService):
                 os.remove(os.path.join(args.dataset_dir, f))
 
         # add or change the sort order 
+        meta = "test.json"
         args.dataset['sort'] = 'coordinate' if args.order_by == location_value else 'queryname'
+        for rec in args.dataset['records']:
+            rec['path'] = rec['path'].split('_')[0] + "_out_" + str(rec['first'])
         for metafile in os.listdir(args.dataset_dir):
             if metafile.endswith(".json"):
-                with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
+                with open(os.path.join(args.dataset_dir, meta), 'w+') as f:
                     json.dump(args.dataset, f, indent=4)
                 break
         #print("results were {}".format(results))
@@ -279,7 +285,8 @@ class LocalSortService(LocalCommonService):
     def make_graph(self, in_queue, args):
 
         # TODO remove the _out when we are satisfied it works correctly
-        rec_name = args.dataset['records'][0]['path'][:-1] # assuming path name is chunk_file_{ordinal}
+        rec_name = args.dataset['records'][0]['path'][:-1] + "out_" # assuming path name is chunk_file_{ordinal}
+        print("Sorting {} chunks".format(len(args.dataset['records'])))
 
         parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(args.sort_read_parallel))
 
@@ -317,7 +324,7 @@ class LocalSortService(LocalCommonService):
         else:
             merge_cols = self.merge_meta_columns
 
-        merge_files = list(list(a) for a in pipeline.local_read_pipeline(upstream_tensors=[full_path_scalar], columns=merge_cols, mmap_pool=mmap_pool))
+        merge_files = list(list(a) for a in pipeline.local_read_pipeline(upstream_tensors=[full_path_scalar], sync=False, columns=merge_cols, mmap_pool=mmap_pool))
         stacked_chunks = []
         for f in merge_files:
             stacked_chunks.append(tf.stack(f))
