@@ -1,5 +1,6 @@
 import os
 import json
+import math
 from ..common.service import Service
 from common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
 from tensorflow.python.ops import io_ops, variables, string_ops, array_ops, data_flow_ops, math_ops, control_flow_ops
@@ -26,6 +27,42 @@ def name_generator(base_name, separator="-"):
         base_name = tf.constant(str(base_name), dtype=dtypes.string,
                                 shape=tensor_shape.scalar(), name="name_generator_base")
     return tf.string_join([base_name, var_as_string], separator=separator, name="name_generator")
+
+class VerifySortService(Service):
+    def extract_run_args(self, args):
+        return []
+    def add_graph_args(self, parser):
+        pass
+    def add_run_args(self, parser):
+        super().add_run_args(parser=parser)
+        parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), required=True, help="Directory containing ALL of the chunk files")
+
+    def get_shortname(self):
+        return "verify"
+
+    def output_dtypes(self, args):
+        return (tf.dtypes.string,)
+
+    def output_shapes(self, args):
+        return (tf.tensor_shape.scalar(),)
+
+    def distributed_capability(self):
+        return False
+    
+    def make_graph(self, in_queue, args):
+        records = args.dataset['records']
+        first_record = records[0]
+        chunk_size = first_record["last"] - first_record["first"]
+        chunknames = []
+        for record in records:
+            chunknames.append(record['path'])
+
+        path = tf.constant(args.dataset_dir + '/')
+        names = tf.constant(chunknames)
+        size = tf.constant(chunk_size)
+        output = persona_ops.agd_verify_sort(path, names, size)
+
+        return [], [output]
 
 class SortCommonService(Service):
     columns = ["base", "qual", "metadata", "results"]
@@ -262,7 +299,8 @@ class LocalSortService(LocalCommonService):
         inter_file_paths = pipeline.join(writers, parallel=1, capacity=3, multi=True, name="writer_queue")[0]
         inter_file_name = inter_file_paths[-1]
         
-        num_inter_files = int(len(args.dataset['records']) / args.column_grouping)
+        num_inter_files = int(math.ceil(len(args.dataset['records']) / args.column_grouping))
+
 
         # these two queues form a barrier, to force downstream to wait until all intermediate superchunks are ready for merge
         # wait for num_inter_files
