@@ -72,6 +72,7 @@ def export_bam(in_queue, args):
 
   result_chunk_list = [ list(c) for c in result_chunks ]
 
+  print(result_chunk_list)
   to_parse = pipeline.join(upstream_tensors=result_chunk_list, parallel=args.parallel_parse, multi=True, capacity=8)
 
   parsed_results = pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=to_parse)
