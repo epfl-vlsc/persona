@@ -1,21 +1,31 @@
-
-from __future__ import print_function
-
 import os
 import json
-import multiprocessing
 from ..common.service import Service
 from common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
 from tensorflow.python.ops import io_ops, variables, string_ops, array_ops, data_flow_ops, math_ops, control_flow_ops
 from tensorflow.python.framework import ops, tensor_shape, common_shapes, constant_op, dtypes
 
 import tensorflow as tf
-import itertools
 
 persona_ops = tf.contrib.persona.persona_ops()
 from tensorflow.contrib.persona import queues, pipeline
 
 location_value = "location"
+
+def name_generator(base_name, separator="-"):
+    """
+    Given a basename, defines an op that will generate intermediate unique names
+    based on the base_name parameter.
+
+    The suffix will be separated with `separator`, and will start counting from 0.
+    """
+    start_var = variables.Variable(-1)
+    incr_var = start_var.assign_add(1)
+    var_as_string = string_ops.as_string(incr_var)
+    if not isinstance(base_name, ops.Tensor):
+        base_name = tf.constant(str(base_name), dtype=dtypes.string,
+                                shape=tensor_shape.scalar(), name="name_generator_base")
+    return tf.string_join([base_name, var_as_string], separator=separator, name="name_generator")
 
 class SortCommonService(Service):
     columns = ["base", "qual", "metadata", "results"]
@@ -47,22 +57,6 @@ class SortCommonService(Service):
         print("sorting records: {} with columns {}".format(recs, self.columns))
         return recs
 
-    def name_generator(self, base_name, separator="-"):
-        """
-        Given a basename, defines an op that will generate intermediate unique names
-        based on the base_name parameter.
-
-        The suffix will be separated with `separator`, and will start counting from 0.
-        """
-        start_var = variables.Variable(-1)
-        incr_var = start_var.assign_add(1)
-        var_as_string = string_ops.as_string(incr_var)
-        if not isinstance(base_name, ops.Tensor):
-            base_name = tf.constant(str(base_name), dtype=dtypes.string,
-                                             shape=tensor_shape.scalar(), name="name_generator_base")
-        return tf.string_join([base_name, var_as_string], separator=separator, name="name_generator")
-
-
     def add_graph_args(self, parser):
         # adds the common args to all graphs
         parser.add_argument("-r", "--sort-read-parallel", default=1, type=numeric_min_checker(minimum=1, message="read parallelism min for sort phase"),
@@ -75,46 +69,32 @@ class SortCommonService(Service):
                           type=numeric_min_checker(minimum=1, message="sorting pipeline min"))
         parser.add_argument("-w", "--write-parallel", default=1, help="number of writing pipelines to run in parallel",
                           type=numeric_min_checker(minimum=1, message="writing pipeline min"))
-        parser.add_argument("--chunk", default=4, type=numeric_min_checker(1, "need non-negative chunk size"), help="chunk size for final merge stage")
+        parser.add_argument("--chunk", default=100000, type=numeric_min_checker(1, "need non-negative chunk size"), help="chunk size for final merge stage")
         parser.add_argument("-b", "--order-by", default="location", choices=["location", "metadata"], help="sort by this parameter [location | metadata]")
 
-    def make_compressors(self, recs_and_handles):
+    def make_compressors(self, recs_and_handles, bufpool):
 
-        buf_pool = persona_ops.buffer_pool(size=0, bound=False, name="bufpool")
+      #buf_pool = persona_ops.buffer_pool(size=0, bound=False, name="bufpool")
 
         for a in recs_and_handles:
             # out_tuple = [results, base, qual, meta, record_name, first_ord, num_recs, file_name]
             compressed_bufs = []
             for i, buf in enumerate(a[:4]):
-                compact = True if i == 1 else False  # bases is always second column
-                compressed_bufs.append(persona_ops.buffer_pair_compressor(buffer_pool=buf_pool, buffer_pair=buf, pack=compact))
+                compact = i == 1 # bases is always second column
+                compressed_bufs.append(persona_ops.buffer_pair_compressor(buffer_pool=bufpool, buffer_pair=buf, pack=compact))
 
             compressed_matrix = tf.stack(compressed_bufs)
             yield [compressed_matrix] + a[4:]
 
-    def make_sorters(self, batch, buffer_list_pool, order_by):
-        # FIXME this needs the number of records
-        for b, q, m, r, num_records, im_name in batch:
-            if order_by == location_value:
-                yield persona_ops.agd_sort(buffer_list_pool=buffer_list_pool,
-                                  results_handles=r, bases_handles=b,
-                                  qualities_handles=q, metadata_handles=m,
-                                  num_records=num_records, name="local_read_agd_sort"), im_name
-            else:
-                yield persona_ops.agd_sort_metadata(buffer_list_pool=buffer_list_pool,
-                                  results_handles=r, bases_handles=b,
-                                  qualities_handles=q, metadata_handles=m,
-                                  num_records=num_records, name="local_read_agd_sort"), im_name
-   
     # chunks_to_merge is matrix of handles
-    def make_merge_pipeline(self, args, record_name, chunks_to_merge):
+    def make_merge_pipeline(self, args, record_name, chunks_to_merge, bpp):
 
-        q = data_flow_ops.FIFOQueue(capacity=100000, # big because who cares
+        q = data_flow_ops.FIFOQueue(capacity=8, # big because who cares
                                     dtypes=[dtypes.int32, dtypes.string, dtypes.string, dtypes.string, dtypes.string],
                                     shapes=[tensor_shape.scalar(), tensor_shape.vector(2), tensor_shape.vector(2), tensor_shape.vector(2), tensor_shape.vector(2)],
                                     name="merge_output_queue")
 
-        bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="local_read_merge_buffer_list_pool")
+        #bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="local_read_merge_buffer_list_pool")
 
         if args.order_by == location_value:
             merge = persona_ops.agd_merge
@@ -142,14 +122,14 @@ class SortCommonService(Service):
 
         return out_tuple
         
-    def make_sort_pipeline(self, args, input_gen):
+    def make_sort_pipeline(self, args, input_gen, buf_pool, bufpair_pool):
 
         ready_to_process = pipeline.join(upstream_tensors=input_gen,
                                          parallel=args.sort_read_parallel,
                                          capacity=args.sort_read_parallel, # multiplied by some factor?
                                          multi=True, name="ready_to_process")
         # need to unpack better here
-        multi_column_gen = list(pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=ready_to_process))
+        multi_column_gen = list(pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=ready_to_process, buffer_pool=buf_pool))
         # [ [base qual meta result], num_recs, first_ord, record_id ] 
         chunks_and_recs = []
         for chunks, num_recs, first_ord, record_id in multi_column_gen:
@@ -161,9 +141,9 @@ class SortCommonService(Service):
 
         ready = tf.train.batch_join(chunks_and_recs, batch_size=args.column_grouping, allow_smaller_final_batch=True)
        
-        name_queue = pipeline.join([self.name_generator("intermediate_file")], parallel=args.sort_parallel, capacity=8, multi=False, name="inter_file_gen_q")
+        name_queue = pipeline.join([name_generator("intermediate_file")], parallel=args.sort_parallel, capacity=8, multi=False, name="inter_file_gen_q")
     
-        bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="local_read_buffer_pair_pool")
+        #bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="local_read_buffer_pair_pool")
 
         if args.order_by == location_value:
             sorter = persona_ops.agd_sort
@@ -173,10 +153,11 @@ class SortCommonService(Service):
         sorters = []
         for i in range(args.sort_parallel):
             b, q, m, r, num = ready
-            superchunk_matrix, num_recs = sorter(buffer_pair_pool=bpp,
+            superchunk_matrix, num_recs = sorter(buffer_pair_pool=bufpair_pool,
                               results_handles=r, bases_handles=b,
                               qualities_handles=q, metadata_handles=m,
                               num_records=num, name="local_read_agd_sort")
+            # super chunk is b, q, m, r
             sorters.append( [ superchunk_matrix, num_recs, name_queue[i] ] )
 
         return sorters
@@ -205,7 +186,6 @@ class LocalCommonService(SortCommonService):
                     json.dump(args.dataset, f, indent=4)
                 break
         #print("results were {}".format(results))
-        return
 
 class LocalSortService(LocalCommonService):
     """ A service to use the SNAP aligner with a local dataset """
@@ -214,14 +194,16 @@ class LocalSortService(LocalCommonService):
         return "local"
 
     def output_dtypes(self, args):
-        return ((tf.dtypes.string,) * 4)
+        return (tf.dtypes.string,)
 
     def output_shapes(self, args):
-        return (tf.tensor_shape.scalar(),) * 4
+        return (tf.tensor_shape.scalar(),)
+
+    def distributed_capability(self):
+        return False
 
     def make_inter_writers(self, batch, output_dir, write_parallelism):
-
-        single = pipeline.join(batch, parallel=write_parallelism, capacity=8, multi=True, name="writer_queue")
+        single = pipeline.join(batch, parallel=write_parallelism, capacity=write_parallelism, multi=True, name="writer_queue")
         types = ["base_compact", "text", "text", "structured"]
       
         # no uncompressed buffer pair writer yet
@@ -249,7 +231,7 @@ class LocalSortService(LocalCommonService):
         # add parallelism here if necessary to saturate write bandwidth
         # [compressed_matrix, record_name, first_ord, num_recs, file_name]
       
-        print(compressed_buf)
+        #print(compressed_buf)
         # upstream_tensors: a list of tensor tuples of type: buffer_list_handle, record_id, first_ordinal, num_records, file_path
         types = self.records_type_location if args.order_by == location_value else self.records_type_metadata
         writers = pipeline.local_write_pipeline(upstream_tensors=[compressed_buf], compressed=True, record_types=types, name="local_write_pipeline")
@@ -265,14 +247,19 @@ class LocalSortService(LocalCommonService):
         parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(args.sort_read_parallel))
 
         # read_files: [(file_path, (mmaped_file_handles, a gen)) x N]
-        read_files = list(list(a) for a in pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=self.columns))
-        # need to use tf.tuple to make sure that these are both made ready at the same time
+        mmap_pool = persona_ops.m_map_pool(name="mmap_pool", size=10, bound=False)
 
-        sorters = self.make_sort_pipeline(args=args, input_gen=read_files)
+        read_files = list(list(a) for a in pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=self.columns, mmap_pool=mmap_pool))
+        # need to use tf.tuple to make sure that these are both made ready at the same time
+        
+        buf_pool = persona_ops.buffer_pool(size=0, bound=False, name="bufpool")
+        bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="local_read_merge_buffer_list_pool")
+
+        sorters = self.make_sort_pipeline(args=args, input_gen=read_files, buf_pool=buf_pool, bufpair_pool=bpp)
 
         writers = self.make_inter_writers(sorters, args.dataset_dir, args.write_parallel)
         
-        inter_file_paths = pipeline.join(writers, parallel=1, capacity=8, multi=True, name="writer_queue")[0]
+        inter_file_paths = pipeline.join(writers, parallel=1, capacity=3, multi=True, name="writer_queue")[0]
         inter_file_name = inter_file_paths[-1]
         
         num_inter_files = int(len(args.dataset['records']) / args.column_grouping)
@@ -292,19 +279,19 @@ class LocalSortService(LocalCommonService):
         else:
             merge_cols = self.merge_meta_columns
 
-        merge_files = list(list(a) for a in pipeline.local_read_pipeline(upstream_tensors=[full_path_scalar], columns=merge_cols))
+        merge_files = list(list(a) for a in pipeline.local_read_pipeline(upstream_tensors=[full_path_scalar], columns=merge_cols, mmap_pool=mmap_pool))
         stacked_chunks = []
         for f in merge_files:
             stacked_chunks.append(tf.stack(f))
 
         # batch all the intermediate superchunks that are now mmap'd
         chunks_to_merge = tf.train.batch(stacked_chunks, batch_size=num_inter_files)
-        merge_tuple = self.make_merge_pipeline(args=args, chunks_to_merge=chunks_to_merge, record_name=rec_name)
+        merge_tuple = self.make_merge_pipeline(args=args, chunks_to_merge=chunks_to_merge, record_name=rec_name, bpp=bpp)
         # out_tuple = [results, base, qual, meta, record_name, first_ord, num_recs, file_name]
       
         compress_queue = pipeline.join(merge_tuple, capacity=4, parallel=args.compress_parallel, multi=False)
 
-        compressed_bufs = list(self.make_compressors(compress_queue))
+        compressed_bufs = list(self.make_compressors(compress_queue, buf_pool))
         writers = list(list(a) for a in self.make_writers(args, compressed_bufs))
 
         return writers, []

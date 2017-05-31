@@ -47,6 +47,8 @@ class BWACommonService(Service):
         for i in range(args.max_secondary):
             self.write_columns.append('secondary{}'.format(i))
 
+        self.write_columns = [ {"type": "structured", "extension": a} for a in self.write_columns]
+        
         joiner = tuple(tuple(a) + tuple(b) for a,b in zip(input_gen, pass_around_gen))
         ready_to_process = pipeline.join(upstream_tensors=joiner,
                                          parallel=args.parallel,
@@ -54,7 +56,8 @@ class BWACommonService(Service):
                                          multi=True)
         # need to unpack better here
         to_agd_reader, pass_around_agd_reader = zip(*((a[:2], a[2:]) for a in ready_to_process))
-        multi_column_gen = pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=to_agd_reader, twobit=True)
+
+        multi_column_gen = pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=to_agd_reader)
 
         def process_processed_bufs():
             for processed_column, pass_around in zip(multi_column_gen, pass_around_agd_reader):
@@ -67,8 +70,13 @@ class BWACommonService(Service):
                                           parallel=1, capacity=32, multi=True) # TODO these params are kinda arbitrary :/
         # ready_to_assemble: [output_buffers, num_records, first_ordinal, record_id, pass_around {flattened}) x N]
         to_assembler, pass_around_assembler = zip(*((a[:2], a[1:]) for a in ready_to_assemble))
+        print("reads {}".format(to_assembler))
+        base, qual = tf.unstack(to_assembler[0][0])
+        num_recs = to_assembler[0][1]
+        two_bit_base = persona_ops.two_bit_converter(num_recs, base)
+        to_assembler_converted = [[ tf.stack([two_bit_base, qual]) , num_recs ]]
         # each item out of this is a handle to AGDReads
-        agd_read_assembler_gen = tuple(pipeline.agd_bwa_read_assembler(upstream_tensors=to_assembler, include_meta=False))
+        agd_read_assembler_gen = tuple(pipeline.agd_bwa_read_assembler(upstream_tensors=to_assembler_converted, include_meta=False))
         # assembled_records, ready_to_align: [(agd_reads_handle, (num_records, first_ordinal, record_id), (pass_around)) x N]
         assembled_records_gen = tuple(zip(agd_read_assembler_gen, pass_around_assembler))
         assembled_records = tuple(((a,) + tuple(b)) for a,b in assembled_records_gen)
@@ -108,6 +116,7 @@ class BWACommonService(Service):
                                                subchunk_size=args.subchunking,
                                                executor_handle=executor,
                                                max_secondary=args.max_secondary)
+                print(aligner_results)
                 yield (aligner_results,) + tuple(pass_around)
 
         aligners = tuple(make_aligners())
@@ -220,34 +229,11 @@ class LocalBWAService(LocalCommonService):
                                                                       pass_around_gen=pass_around_gen))
 
         to_writer_gen = tuple((buffer_list_handle, record_id, first_ordinal, num_records, file_basename) for buffer_list_handle, num_records, first_ordinal, record_id, file_basename in aligner_results)
-        written_records = tuple(tuple(a) for a in pipeline.local_write_pipeline(upstream_tensors=to_writer_gen, record_types=self.write_columns))
+        print(to_writer_gen)
+        print(self.write_columns)
+        written_records = tuple(tuple(a) for a in pipeline.local_write_pipeline(upstream_tensors=to_writer_gen, record_types=self.write_columns, compressed=False))
         final_output_gen = zip(written_records, ((record_id, first_ordinal, num_records, file_basename) for _, num_records, first_ordinal, record_id, file_basename in aligner_results))
         return (b+(a,) for a,b in final_output_gen), run_first
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # old stuff

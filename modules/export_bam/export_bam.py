@@ -31,7 +31,7 @@ class ExportBamService(Service):
     
     def add_graph_args(self, parser):
         # adds the common args to all graphs
-        parser.add_argument("-p", "--parallel-parse", default=1, help="Parallelism of decompress stage")
+        parser.add_argument("-p", "--parallel-parse", type=int, default=1, help="Parallelism of decompress stage")
         parser.add_argument("-o", "--output-path", default="", help="Output bam file path")
         parser.add_argument("-t", "--threads", type=int, default=multiprocessing.cpu_count()-1, 
           help="Number of threads to use for compression [{}]".format(multiprocessing.cpu_count()-1))
@@ -72,6 +72,7 @@ def export_bam(in_queue, args):
 
   result_chunk_list = [ list(c) for c in result_chunks ]
 
+  print(result_chunk_list)
   to_parse = pipeline.join(upstream_tensors=result_chunk_list, parallel=args.parallel_parse, multi=True, capacity=8)
 
   parsed_results = pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=to_parse)
