@@ -317,7 +317,7 @@ class LocalSortService(LocalCommonService):
         else:
             merge_cols = self.merge_meta_columns
 
-        merge_files = list(list(a) for a in pipeline.local_read_pipeline(upstream_tensors=[full_path_scalar], columns=merge_cols, mmap_pool=mmap_pool))
+        merge_files = list(list(a) for a in pipeline.local_read_pipeline(upstream_tensors=[full_path_scalar], columns=merge_cols, mmap_pool=mmap_pool, sync=False))
         stacked_chunks = []
         for f in merge_files:
             stacked_chunks.append(tf.stack(f))
