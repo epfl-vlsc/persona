@@ -67,20 +67,62 @@ class VerifySortService(Service):
 
         return [], [output]
 
+def get_inter_columns(order_by, columns):
+    if order_by == location_value:
+        inter_cols = ['results']
+        for c in columns:
+            if c != 'results':
+                inter_cols.append(c)
+    else:
+        inter_cols = ['metadata']
+        for c in columns:
+            if c is not 'metadata':
+                inter_cols.append(c)
+    return inter_cols
+
+def get_types_for_columns(columns):
+    types = []
+    typemap = {'results':'structured', 'secondary':'structured',
+            'base':'base_compact', 'qual':'text', 'metadata':'text'}
+    for c in columns:
+        col = ''.join([i for i in c if not i.isdigit()])
+        types.append(typemap[col])
+    return types
+
+def get_record_types_for_columns(order_by, columns):
+    typemap = {'results':'structured', 'secondary':'structured',
+            'base':'base_compact', 'qual':'text', 'metadata':'text'}
+    if order_by == location_value:
+        record_types = [{"type": "structured", "extension": "results"}]
+        for c in columns:
+            col = ''.join([i for i in c if not i.isdigit()])
+            if c != 'results':
+                record_types.append({"type": typemap[col], "extension":c})
+    else:
+        record_types = [{"type": "text", "extension": "metadata"}]
+        for c in columns:
+            col = ''.join([i for i in c if not i.isdigit()])
+            if c != 'metadata':
+                record_types.append({"type": typemap[col], "extension":c})
+    return record_types
+
+
+
 class SortCommonService(Service):
     columns = ["base", "qual", "metadata", "results"]
-    merge_result_columns = ["results", "base", "qual", "metadata"]
-    merge_meta_columns = ["metadata", "base", "qual", "results"]
-    records_type_location = ({"type": "structured", "extension": "results"},
-                            {"type": "base_compact", "extension": "base"},
-                            {"type": "text", "extension": "qual"},
-                            {"type": "text", "extension": "metadata"},
-                            )
-    records_type_metadata = ({"type": "text", "extension": "metadata"},
-                            {"type": "base_compact", "extension": "base"},
-                            {"type": "text", "extension": "qual"},
-                            {"type": "structured", "extension": "results"},
-                            )
+    inter_columns = ["results", "base", "qual", "metadata"]
+    #merge_result_columns = ["results", "base", "qual", "metadata"]    just inter_columns
+    #merge_meta_columns = ["metadata", "base", "qual", "results"]
+    #records_type_location = ({"type": "structured", "extension": "results"},
+                            #{"type": "base_compact", "extension": "base"},
+                            #{"type": "text", "extension": "qual"},
+                            #{"type": "text", "extension": "metadata"},
+                            #)
+    #records_type_metadata = ({"type": "text", "extension": "metadata"},
+                            #{"type": "base_compact", "extension": "base"},
+                            #{"type": "text", "extension": "qual"},
+                            #{"type": "structured", "extension": "results"},
+                            #)
 
     inter_file_name = "intermediate_file"
 
@@ -94,7 +136,9 @@ class SortCommonService(Service):
             args.column_grouping = num_file_keys
 
         self.columns = dataset['columns']
-        print("sorting records: {} with columns {}".format(recs, self.columns))
+        self.inter_columns = get_inter_columns(args.order_by, self.columns)
+        print("sorting with columns {}".format(self.columns))
+        print("inter columns is {}".format(self.inter_columns))
         return recs
 
     def add_graph_args(self, parser):
@@ -119,19 +163,21 @@ class SortCommonService(Service):
         for a in recs_and_handles:
             # out_tuple = [results, base, qual, meta, record_name, first_ord, num_recs, file_name]
             compressed_bufs = []
-            for i, buf in enumerate(a[:4]):
+            for i, buf in enumerate(a[:len(self.inter_columns)]):
                 compact = i == 1 # bases is always second column
                 compressed_bufs.append(persona_ops.buffer_pair_compressor(buffer_pool=bufpool, buffer_pair=buf, pack=compact))
 
             compressed_matrix = tf.stack(compressed_bufs)
-            yield [compressed_matrix] + a[4:]
+            yield [compressed_matrix] + a[len(self.inter_columns):]
 
     # chunks_to_merge is matrix of handles
     def make_merge_pipeline(self, args, record_name, chunks_to_merge, bpp):
 
+        types = [dtypes.int32] + [dtypes.string]*len(self.inter_columns)
+        shapes = [tensor_shape.scalar()] + [tensor_shape.vector(2)]*len(self.inter_columns)
         q = data_flow_ops.FIFOQueue(capacity=8, # big because who cares
-                                    dtypes=[dtypes.int32, dtypes.string, dtypes.string, dtypes.string, dtypes.string],
-                                    shapes=[tensor_shape.scalar(), tensor_shape.vector(2), tensor_shape.vector(2), tensor_shape.vector(2), tensor_shape.vector(2)],
+                                    dtypes=types,
+                                    shapes=shapes,
                                     name="merge_output_queue")
 
         #bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="local_read_merge_buffer_list_pool")
@@ -150,7 +196,9 @@ class SortCommonService(Service):
         tf.train.queue_runner.add_queue_runner(tf.train.queue_runner.QueueRunner(q, [merge_op]))
    
         # num_recs, results, base, qual, meta
-        num_recs, results, base, qual, meta = q.dequeue()
+        #num_recs, results, base, qual, meta = q.dequeue()
+        val = q.dequeue()
+        num_recs = val[0]
 
         record_name_constant = constant_op.constant(record_name)
         first_ordinal = tf.Variable(-1 * args.chunk, dtype=dtypes.int64, name="first_ordinal")
@@ -158,7 +206,7 @@ class SortCommonService(Service):
         first_ord_str = string_ops.as_string(first_ord, name="first_ord_string")
         file_name = string_ops.string_join([args.dataset_dir, "/", record_name_constant, first_ord_str], name="file_name_string_joiner")
        
-        out_tuple = [results, base, qual, meta, record_name, first_ord, num_recs, file_name]
+        out_tuple = val[1:] + [record_name, first_ord, num_recs, file_name]
 
         return out_tuple
         
@@ -192,12 +240,14 @@ class SortCommonService(Service):
 
         sorters = []
         for i in range(args.sort_parallel):
-            b, q, m, r, num = ready
+            #b, q, m, r, num = ready
+            num = ready[-1]
+            r = ready[0] # the sort predicate column must be first
+            cols = tf.stack(ready[1:-1])
             superchunk_matrix, num_recs = sorter(buffer_pair_pool=bufpair_pool,
-                              results_handles=r, bases_handles=b,
-                              qualities_handles=q, metadata_handles=m,
+                              results_handles=r, column_handles=cols,
                               num_records=num, name="local_read_agd_sort")
-            # super chunk is b, q, m, r
+            # super chunk is r, b, q, m
             sorters.append( [ superchunk_matrix, num_recs, name_queue[i] ] )
 
         return sorters
@@ -219,13 +269,13 @@ class LocalCommonService(SortCommonService):
                 os.remove(os.path.join(args.dataset_dir, f))
 
         # add or change the sort order 
-        #meta = "test.json"
+        meta = "test.json"
         args.dataset['sort'] = 'coordinate' if args.order_by == location_value else 'queryname'
-        #for rec in args.dataset['records']:
-        #    rec['path'] = rec['path'].split('_')[0] + "_out_" + str(rec['first'])
+        for rec in args.dataset['records']:
+            rec['path'] = rec['path'].split('_')[0] + "_out_" + str(rec['first'])
         for metafile in os.listdir(args.dataset_dir):
             if metafile.endswith(".json"):
-                with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
+                with open(os.path.join(args.dataset_dir, meta), 'w+') as f:
                     json.dump(args.dataset, f, indent=4)
                 break
         #print("results were {}".format(results))
@@ -247,7 +297,9 @@ class LocalSortService(LocalCommonService):
 
     def make_inter_writers(self, batch, output_dir, write_parallelism):
         single = pipeline.join(batch, parallel=write_parallelism, capacity=write_parallelism, multi=True, name="writer_queue")
-        types = ["base_compact", "text", "text", "structured"]
+        types = get_types_for_columns(self.inter_columns)
+        print("inter col types {}".format(types))
+        #types = [ "structured", "base_compact", "text", "text"]
       
         # no uncompressed buffer pair writer yet
         writers = []
@@ -255,7 +307,7 @@ class LocalSortService(LocalCommonService):
             w = [] 
             bufs = tf.unstack(buf)
             for i, b in enumerate(bufs):
-                result_key = string_ops.string_join([output_dir, "/", record_id, ".",  self.columns[i]], name="key_string")
+                result_key = string_ops.string_join([output_dir, "/", record_id, ".",  self.inter_columns[i]], name="key_string")
                 
                 result = persona_ops.agd_file_system_buffer_pair_writer(record_id=record_id,
                                                              record_type=types[i],
@@ -276,7 +328,9 @@ class LocalSortService(LocalCommonService):
       
         #print(compressed_buf)
         # upstream_tensors: a list of tensor tuples of type: buffer_list_handle, record_id, first_ordinal, num_records, file_path
-        types = self.records_type_location if args.order_by == location_value else self.records_type_metadata
+        #types = self.records_type_location if args.order_by == location_value else self.records_type_metadata
+        types = get_record_types_for_columns(args.order_by, self.inter_columns)
+        print("final write types {}".format(types))
         writers = pipeline.local_write_pipeline(upstream_tensors=[compressed_buf], compressed=True, record_types=types, name="local_write_pipeline")
         
         return writers
@@ -285,7 +339,7 @@ class LocalSortService(LocalCommonService):
     def make_graph(self, in_queue, args):
 
         # TODO remove the _out when we are satisfied it works correctly
-        rec_name = args.dataset['records'][0]['path'][:-1] # + "out_" # assuming path name is chunk_file_{ordinal}
+        rec_name = args.dataset['records'][0]['path'][:-1]  + "out_" # assuming path name is chunk_file_{ordinal}
         print("Sorting {} chunks".format(len(args.dataset['records'])))
 
         parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(args.sort_read_parallel))
@@ -293,7 +347,7 @@ class LocalSortService(LocalCommonService):
         # read_files: [(file_path, (mmaped_file_handles, a gen)) x N]
         mmap_pool = persona_ops.m_map_pool(name="mmap_pool", size=10, bound=False)
 
-        read_files = list(list(a) for a in pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=self.columns, mmap_pool=mmap_pool))
+        read_files = list(list(a) for a in pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=self.inter_columns, mmap_pool=mmap_pool))
         # need to use tf.tuple to make sure that these are both made ready at the same time
         
         buf_pool = persona_ops.buffer_pool(size=0, bound=False, name="bufpool")
@@ -319,10 +373,11 @@ class LocalSortService(LocalCommonService):
         full_path_scalar = tf.reshape(full_path, [])
 
         # may need to add disk read parallelism here
-        if args.order_by == location_value:
-            merge_cols = self.merge_result_columns
-        else:
-            merge_cols = self.merge_meta_columns
+        merge_cols = self.inter_columns
+        #if args.order_by == location_value:
+            #merge_cols = self.merge_result_columns
+        #else:
+            #merge_cols = self.merge_meta_columns
 
         merge_files = list(list(a) for a in pipeline.local_read_pipeline(upstream_tensors=[full_path_scalar], sync=False, columns=merge_cols, mmap_pool=mmap_pool))
         stacked_chunks = []
@@ -337,6 +392,7 @@ class LocalSortService(LocalCommonService):
         compress_queue = pipeline.join(merge_tuple, capacity=4, parallel=args.compress_parallel, multi=False)
 
         compressed_bufs = list(self.make_compressors(compress_queue, buf_pool))
+        print(compressed_bufs)
         writers = list(list(a) for a in self.make_writers(args, compressed_bufs))
 
         return writers, []
