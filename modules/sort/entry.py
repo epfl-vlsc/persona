@@ -9,7 +9,10 @@ class CephSortSingleton(service.ServiceSingleton):
 class LocalSortSingleton(service.ServiceSingleton):
   class_type = merge_sort.LocalSortService
 
-_singletons = [ CephSortSingleton(), LocalSortSingleton() ]
+class VerifySortSingleton(service.ServiceSingleton):
+  class_type = merge_sort.VerifySortService
+
+_singletons = [ CephSortSingleton(), LocalSortSingleton(), VerifySortSingleton() ]
 _service_map = { a.get_shortname(): a for a in _singletons }
 
 def get_services():
