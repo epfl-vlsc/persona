@@ -242,7 +242,9 @@ class LocalCommonService(SnapCommonService):
         if "results" not in columns:
             columns.append('results')
         for i in range(args.max_secondary):
-          columns.append("secondary{}".format(i))
+            to_add = "secondary{}".format(i)
+            if to_add not in columns:
+                columns.append()
         args.dataset['columns'] = columns
 
         for metafile in os.listdir(args.dataset_dir):
