@@ -39,9 +39,11 @@ class CalculateCoverageService(Service):
         parser.add_argument("-i", "--dataset-dir", type=path_exists_checker(), required=True, help="Directory containing ALL of the chunk files")
         parser.add_argument("-scale", "--scale", default=1,type = int, help="change the scale of the coverage found")
         parser.add_argument("-max", "--max", default=-1, type = int, help="restrict max coverage of histogram")
-        parser.add_argument("-bg", "--bedgraph", default=False, action="store_true", help="output in bedgraph format")
-        parser.add_argument("-d", "--d", default=False, action="store_true", help="reporting per-base genome coverage")
+        parser.add_argument("-bg", "--bedgraph", default=False, action="store_true", help="output in bedgraph format ")
+        parser.add_argument("-d", "--d", default=False, action="store_true", help="reporting per-base genome coverage(zeroes as well)")
         parser.add_argument("-strand","--strand", default='B', help="individual coverage for + and - strands")
+        parser.add_argument("-bga", "--bedgrapha", default=False, action="store_true", help="output in bedgraph format(zeroes as well)")
+        parser.add_argument("-dz", "--dz", default=False, action="store_true", help="reporting per-base genome coverage")
 
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two
@@ -63,7 +65,9 @@ class CalculateCoverageService(Service):
                                        max = args.max,
                                        bg = args.bedgraph,
                                        d = args.d,
-                                       strand = args.strand)
+                                       strand = args.strand,
+                                       bga = args.bedgrapha,
+                                       dz = args.dz)
         run_once = []
         return [[op]] , run_once
 
@@ -95,7 +99,7 @@ def compress_pipeline(results, compress_parallelism):
 
         yield compressed_buf, num_recs, first_ord, record_id
 
-def agd_calculate_coverage_local(in_queue, argsj,outdir=None, parallel_parse=1,scale=1,max=-1,bg=False,d =  False,strand = "B"):
+def agd_calculate_coverage_local(in_queue, argsj,outdir=None, parallel_parse=1,scale=1,max=-1,bg=False,d =  False,strand = "B",bga=False,dz= False):
     manifest = argsj.dataset
     if 'reference' not in manifest:
         raise Exception("No reference data in manifest {}. Unaligned BAM not yet supported. Please align dataset first.".format(args.dataset))
@@ -135,7 +139,7 @@ def agd_calculate_coverage_local(in_queue, argsj,outdir=None, parallel_parse=1,s
 
     # bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="output_buffer_pair_pool")
 
-    result = persona_ops.agd_gene_coverage(results_handle=result_buf, num_records=num_results,ref_sequences=ref_seqs,ref_seq_sizes=ref_lens,scale = scale, max= max,bg = bg,d = d, strand = strand, name="calculatecoverageop")
+    result = persona_ops.agd_gene_coverage(results_handle=result_buf, num_records=num_results,ref_sequences=ref_seqs,ref_seq_sizes=ref_lens,scale = scale, max= max,bg = bg,d = d, strand = strand, dz = dz,bga= bga,name="calculatecoverageop")
 
 
     # result_to_write = pipeline.join([result_out, num_results, first_ord, record_id], parallel=parallel_write,
