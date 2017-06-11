@@ -244,7 +244,7 @@ class LocalCommonService(SnapCommonService):
         for i in range(args.max_secondary):
             to_add = "secondary{}".format(i)
             if to_add not in columns:
-                columns.append()
+                columns.append(to_add)
         args.dataset['columns'] = columns
 
         for metafile in os.listdir(args.dataset_dir):
