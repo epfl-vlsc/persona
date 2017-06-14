@@ -1,0 +1,31 @@
+{
+    "name": "Testing",
+    "version": 1,
+    "records": [
+        {
+            "first": 0,
+            "last": 100000,
+            "path": "Testing_0"
+        },
+        {
+            "first": 100000,
+            "last": 200000,
+            "path": "Testing_100000"
+        },
+        {
+            "first": 200000,
+            "last": 300000,
+            "path": "Testing_200000"
+        },
+        {
+            "first": 300000,
+            "last": 400000,
+            "path": "Testing_300000"
+        }
+    ],
+    "columns": [
+        "base",
+        "qual",
+        "metadata"
+    ]
+}
