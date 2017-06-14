@@ -252,11 +252,9 @@ class LocalCommonService(SnapCommonService):
                 columns.append(to_add)
         args.dataset['columns'] = columns
 
-        for metafile in os.listdir(args.dataset_dir):
-            if metafile.endswith(".json"):
-                with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
-                    json.dump(args.dataset, f, indent=4)
-                break
+        with open(args.dataset[parse.filepath_key], 'w+') as f:
+            args.dataset.pop(parse.filepath_key, None)  # we dont need to write the actual file path out
+            json.dump(args.dataset, f, indent=4)
 
 class LocalSnapService(LocalCommonService):
     """ A service to use the SNAP aligner with a local dataset """
