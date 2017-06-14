@@ -7,6 +7,7 @@ logging.basicConfig()
 log = logging.getLogger(__file__)
 log.setLevel(logging.DEBUG)
 
+filepath_key = "filepath"
 def add_dataset(parser):
     """
     Adds the dataset, including parsing, to any parser / subparser
@@ -16,7 +17,9 @@ def add_dataset(parser):
             raise ArgumentTypeError("AGD metadata file not present at {}".format(filename))
         with open(filename) as f:
             try:
-                return json.load(f)
+                loaded = json.load(f)
+                loaded[filepath_key] = filename
+                return loaded
             except json.JSONDecodeError:
                 log.error("Unable to parse AGD metadata file {}".format(filename))
                 raise

@@ -339,7 +339,7 @@ class LocalSortService(LocalCommonService):
     def make_graph(self, in_queue, args):
 
         # TODO remove the _out when we are satisfied it works correctly
-        rec_name = args.dataset['records'][0]['path'][:-1]  + "out_" # assuming path name is chunk_file_{ordinal}
+        rec_name = args.dataset['records'][0]['path'][:-1]  #+ "out_" # assuming path name is chunk_file_{ordinal}
         print("Sorting {} chunks".format(len(args.dataset['records'])))
 
         parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(args.sort_read_parallel))

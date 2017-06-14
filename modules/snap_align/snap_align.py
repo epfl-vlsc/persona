@@ -3,6 +3,7 @@ import json
 import multiprocessing
 from ..common.service import Service
 from common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
+from ..common import parse
 
 import tensorflow as tf
 import itertools
@@ -220,11 +221,15 @@ class CephSnapService(CephCommonService):
 class LocalCommonService(SnapCommonService):
     def extract_run_args(self, args):
         dataset_dir = args.dataset_dir
+        if dataset_dir is None:
+            file_path = args.dataset[parse.filepath_key]
+            dataset_dir = os.path.dirname(file_path)
+
         return (os.path.join(dataset_dir, a) for a in super().extract_run_args(args=args))
 
     def add_run_args(self, parser):
         super().add_run_args(parser=parser)
-        parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), required=True, help="Directory containing ALL of the chunk files")
+        parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), help="Directory containing ALL of the chunk files")
     
     def on_finish(self, args, results):
         # add results column to metadata
@@ -244,14 +249,12 @@ class LocalCommonService(SnapCommonService):
         for i in range(args.max_secondary):
             to_add = "secondary{}".format(i)
             if to_add not in columns:
-                columns.append()
+                columns.append(to_add)
         args.dataset['columns'] = columns
 
-        for metafile in os.listdir(args.dataset_dir):
-            if metafile.endswith(".json"):
-                with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
-                    json.dump(args.dataset, f, indent=4)
-                break
+        with open(args.dataset[parse.filepath_key], 'w+') as f:
+            args.dataset.pop(parse.filepath_key, None)  # we dont need to write the actual file path out
+            json.dump(args.dataset, f, indent=4)
 
 class LocalSnapService(LocalCommonService):
     """ A service to use the SNAP aligner with a local dataset """

@@ -7,6 +7,7 @@ import shutil
 import json
 from ..common.service import Service
 from common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
+from ..common import parse
 
 import tensorflow as tf
 import itertools
@@ -19,6 +20,8 @@ class BWACommonService(Service):
     write_columns = []
 
     def extract_run_args(self, args):
+        if args.paired and args.aligner_threads < 3:
+            raise Exception("Need at least 3 aligner threads for paired execution")
         dataset = args.dataset
         return (a["path"] for a in dataset["records"])
 
@@ -28,8 +31,9 @@ class BWACommonService(Service):
         parser.add_argument("-e", "--enqueue", type=int, default=1, help="parallel enqueuing")
         parser.add_argument("-m", "--mmap-queue", type=int, default=2, help="size of the mmaped file record queue")
         parser.add_argument("-a", "--aligners", type=numeric_min_checker(1, "number of aligners"), default=1, help="number of aligners")
-        parser.add_argument("-t", "--aligner-threads", type=int, default=multiprocessing.cpu_count(), help="the number of threads to use for BWA first state")
-        parser.add_argument("-f", "--finalizer-threads", type=int, default=0, help="the number of threads to use for BWA second stage")
+        parser.add_argument("-t", "--aligner-threads", type=numeric_min_checker(1, "number of aligner threads"), 
+            default=multiprocessing.cpu_count(), help="the number of threads to use for alignment. >= 1 or >= 3 if paired [num_cpus]")
+        parser.add_argument("-r", "--thread-ratio", type=float, default=0.66, help="Ratio of aligner threads to finalize threads")
         parser.add_argument("-x", "--subchunking", type=int, default=5000, help="the size of each subchunk (in number of reads)")
         parser.add_argument("-w", "--writers", type=int, default=0, help="the number of writer pipelines")
         parser.add_argument("-c", "--compress", default=False, action='store_true', help="compress the output")
@@ -70,7 +74,7 @@ class BWACommonService(Service):
                                           parallel=1, capacity=32, multi=True) # TODO these params are kinda arbitrary :/
         # ready_to_assemble: [output_buffers, num_records, first_ordinal, record_id, pass_around {flattened}) x N]
         to_assembler, pass_around_assembler = zip(*((a[:2], a[1:]) for a in ready_to_assemble))
-        print("reads {}".format(to_assembler))
+        #print("reads {}".format(to_assembler))
         base, qual = tf.unstack(to_assembler[0][0])
         num_recs = to_assembler[0][1]
         two_bit_base = persona_ops.two_bit_converter(num_recs, base)
@@ -100,28 +104,37 @@ class BWACommonService(Service):
 
         buffer_list_pool = persona_ops.buffer_list_pool(**pipeline.pool_default_args)
 
+        if args.paired:
+            executor = persona_ops.bwa_paired_executor(max_secondary=args.max_secondary,
+                                                       num_threads=args.aligner_threads,
+                                                       work_queue_size=args.aligners+1,
+                                                       options_handle=options,
+                                                       index_handle=bwa_index,
+                                                       thread_ratio=0.66)
+        else:
+            executor = persona_ops.bwa_single_executor(max_secondary=args.max_secondary,
+                                                       num_threads=args.aligner_threads,
+                                                       work_queue_size=args.aligners+1,
+                                                       options_handle=options,
+                                                       index_handle=bwa_index)
         def make_aligners():
-            if args.paired:
-              raise Exception("paired executor coming soon")
-            else:
-              executor = persona_ops.bwa_single_executor(max_secondary=args.max_secondary,
-                                                           num_threads=args.aligner_threads,
-                                                           work_queue_size=args.aligners+1,
-                                                           options_handle=options,
-                                                           index_handle=bwa_index)
+
+            aligner_op = persona_ops.bwa_align_single if not args.paired else persona_ops.bwa_align_paired
 
             for read_handle, pass_around in zip(pass_to_aligners, pass_around_aligners):
-                aligner_results = persona_ops.bwa_align_single(read=read_handle,
+                aligner_results = aligner_op(read=read_handle,
                                                buffer_list_pool=buffer_list_pool,
                                                subchunk_size=args.subchunking,
                                                executor_handle=executor,
                                                max_secondary=args.max_secondary)
-                print(aligner_results)
+                #print(aligner_results)
                 yield (aligner_results,) + tuple(pass_around)
 
         aligners = tuple(make_aligners())
         aligned_results = pipeline.join(upstream_tensors=aligners, parallel=args.writers, multi=True, capacity=32)
-        return aligned_results, (bwa_index,) # returns [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
+        
+        ref_seqs, lens = persona_ops.bwa_index_reference_sequences(index_handle=bwa_index)
+        return aligned_results,  (bwa_index, ref_seqs, lens) # returns [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
 
 class CephCommonService(BWACommonService):
 
@@ -198,11 +211,42 @@ class CephBWAService(CephCommonService):
 class LocalCommonService(BWACommonService):
     def extract_run_args(self, args):
         dataset_dir = args.dataset_dir
+        if dataset_dir is None:
+            file_path = args.dataset[parse.filepath_key]
+            dataset_dir = os.path.dirname(file_path)
+
         return (os.path.join(dataset_dir, a) for a in super().extract_run_args(args=args))
 
     def add_run_args(self, parser):
         super().add_run_args(parser=parser)
-        parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), required=True, help="Directory containing ALL of the chunk files")
+        parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), help="Directory containing ALL of the chunk files")
+    
+    def on_finish(self, args, results):
+        # add results column to metadata
+        # add reference data to metadata
+        # TODO do the same thing for the ceph version
+
+        columns = args.dataset['columns']
+        _, ref_seqs, lens = results[0]
+        ref_list = []
+        for i, ref in enumerate(ref_seqs):
+            ref_list.append({'name':ref.decode("utf-8"), 'length':lens[i].item(), 'index':i})
+        args.dataset['reference_contigs'] = ref_list
+        args.dataset['reference'] = args.index_path
+
+        if "results" not in columns:
+            columns.append('results')
+        for i in range(args.max_secondary):
+            to_add = "secondary{}".format(i)
+            if to_add not in columns:
+                columns.append(to_add)
+        args.dataset['columns'] = columns
+
+        for metafile in os.listdir(args.dataset_dir):
+            if metafile.endswith(".json"):
+                with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
+                    json.dump(args.dataset, f, indent=4)
+                break
 
 class LocalBWAService(LocalCommonService):
     """ A service to use the BWA aligner with a local dataset """
@@ -229,8 +273,8 @@ class LocalBWAService(LocalCommonService):
                                                                       pass_around_gen=pass_around_gen))
 
         to_writer_gen = tuple((buffer_list_handle, record_id, first_ordinal, num_records, file_basename) for buffer_list_handle, num_records, first_ordinal, record_id, file_basename in aligner_results)
-        print(to_writer_gen)
-        print(self.write_columns)
+        #print(to_writer_gen)
+        #print(self.write_columns)
         written_records = tuple(tuple(a) for a in pipeline.local_write_pipeline(upstream_tensors=to_writer_gen, record_types=self.write_columns, compressed=False))
         final_output_gen = zip(written_records, ((record_id, first_ordinal, num_records, file_basename) for _, num_records, first_ordinal, record_id, file_basename in aligner_results))
         return (b+(a,) for a,b in final_output_gen), run_first
@@ -261,13 +305,6 @@ class BwaService(Service):
         index_path = args.index_path
         if not (os.path.exists(index_path) and os.path.isfile(index_path)):
           raise EnvironmentError("Index path '{}' specified incorrectly. Should be path/to/index.fa".format(index_path))
-
-        if args.finalizer_threads == 0 and args.paired:
-          args.finalizer_threads = int(args.aligner_threads*0.31)
-          args.aligner_threads = args.aligner_threads - args.finalizer_threads
-        else:
-          if args.aligner_threads + args.finalizer_threads > multiprocessing.cpu_count():
-              raise EnvironmentError("More threads than available on machine {}".format(args.aligner_threads + args.finalizer_threads))
 
         #print("aligner {} finalizer {}".format(args.aligner_threads, args.finalizer_threads))
 
