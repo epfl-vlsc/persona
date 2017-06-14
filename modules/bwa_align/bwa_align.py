@@ -7,7 +7,7 @@ import shutil
 import json
 from ..common.service import Service
 from common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
-import common.parse as parse
+from ..common import parse
 
 import tensorflow as tf
 import itertools
