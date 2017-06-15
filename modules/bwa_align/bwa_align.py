@@ -214,6 +214,7 @@ class LocalCommonService(BWACommonService):
         if dataset_dir is None:
             file_path = args.dataset[parse.filepath_key]
             dataset_dir = os.path.dirname(file_path)
+        args.dataset_dir = dataset_dir
 
         return (os.path.join(dataset_dir, a) for a in super().extract_run_args(args=args))
 
