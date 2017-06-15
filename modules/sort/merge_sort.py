@@ -276,13 +276,13 @@ class LocalCommonService(SortCommonService):
                 os.remove(os.path.join(args.dataset_dir, f))
 
         # add or change the sort order 
-        meta = "test.json"
+        #meta = "test.json"
         args.dataset['sort'] = 'coordinate' if args.order_by == location_value else 'queryname'
-        for rec in args.dataset['records']:
-            rec['path'] = rec['path'].split('_')[0] + "_out_" + str(rec['first'])
+        #for rec in args.dataset['records']:
+        #    rec['path'] = rec['path'].split('_')[0] + "_out_" + str(rec['first'])
         for metafile in os.listdir(args.dataset_dir):
             if metafile.endswith(".json"):
-                with open(os.path.join(args.dataset_dir, meta), 'w+') as f:
+                with open(os.path.join(args.dataset_dir, metadata), 'w+') as f:
                     json.dump(args.dataset, f, indent=4)
                 break
         #print("results were {}".format(results))
@@ -346,7 +346,7 @@ class LocalSortService(LocalCommonService):
     def make_graph(self, in_queue, args):
 
         # TODO remove the _out when we are satisfied it works correctly
-        rec_name = args.dataset['records'][0]['path'][:-1]  + "out_" # assuming path name is chunk_file_{ordinal}
+        rec_name = args.dataset['records'][0]['path'][:-1]   # assuming path name is chunk_file_{ordinal}
         print("Sorting {} chunks".format(len(args.dataset['records'])))
 
         parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(args.sort_read_parallel))
