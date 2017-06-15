@@ -60,7 +60,6 @@ class ImportSraService(Service):
         parser.add_argument("-n", "--name", required=True, help="name for the record")
         parser.add_argument("-o", "--out", default=".", help="directory to write the final record to")
         parser.add_argument("-w", "--write", default=1, type=numeric_min_checker(1, "write parallelism"), help="number of parallel writers")
-        #? sra file format dependent: parser.add_argument("--unaligned", default=False, action='store_true', help="Set true if BAM file is unaligned")
         parser.add_argument("--compress-parallel", default=1, type=numeric_min_checker(1, "compress parallelism"), help="number of parallel compression pipelines")
         parser.add_argument("sra_file",  help="the sra file to convert")
 
@@ -96,16 +95,6 @@ class ImportSraService(Service):
             "name": args.name, "version": 1, "records": self.output_records, "columns": columns
         }
 
-        #import ipdb; ipdb.set_trace()
-     #   bamfile = pysam.AlignmentFile(args.bam_file, "rb")
-      #  ref_lens = bamfile.lengths
-       # ref_names = bamfile.references
-       # refs = []
-        #for i, item in enumerate(list(zip(ref_names, ref_lens))):
-         #   name, length = item
-          #  refs.append({'index':i, 'length':length, 'name':name})
-        #self.output_metadata['reference_contigs'] = refs
-
 
         bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="bufpool")
         chunk, num_recs, first_ord = persona_ops.agd_import_sra(path=args.sra_file, num_threads=10, chunk_size=args.chunk, bufpair_pool=bpp)
@@ -113,7 +102,6 @@ class ImportSraService(Service):
         compressors = tuple(compress_pipeline(converters=[[chunk, first_ord, num_recs]], compress_parallelism=args.compress_parallel))
 
         writers = tuple(writer_pipeline(compressors, args.write, args.name, self.outdir))
-        #final = pipeline.join(upstream_tensors=writers, capacity=8, parallel=1, multi=True)[0]
 
         return writers, []
     
