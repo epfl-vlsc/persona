@@ -71,7 +71,7 @@ class BWACommonService(Service):
 
         processed_bufs = tuple(a for a in process_processed_bufs())
         ready_to_assemble = pipeline.join(upstream_tensors=processed_bufs,
-                                          parallel=1, capacity=32, multi=True) # TODO these params are kinda arbitrary :/
+                                          parallel=1, capacity=8, multi=True) # TODO these params are kinda arbitrary :/
         # ready_to_assemble: [output_buffers, num_records, first_ordinal, record_id, pass_around {flattened}) x N]
         to_assembler, pass_around_assembler = zip(*((a[:2], a[1:]) for a in ready_to_assemble))
         #print("reads {}".format(to_assembler))
@@ -85,7 +85,7 @@ class BWACommonService(Service):
         assembled_records_gen = tuple(zip(agd_read_assembler_gen, pass_around_assembler))
         assembled_records = tuple(((a,) + tuple(b)) for a,b in assembled_records_gen)
         ready_to_align = pipeline.join(upstream_tensors=assembled_records,
-                                       parallel=args.aligners, capacity=32, multi=True) # TODO still have default capacity here :/
+                                       parallel=args.aligners, capacity=8, multi=True) # TODO still have default capacity here :/
 
         options = persona_ops.bwa_options(options=args.bwa_args.split(), name="bwa_aligner_options")
         bwa_index = persona_ops.bwa_index(index_location=args.index_path, ignore_alt=False, name="index_loader")
