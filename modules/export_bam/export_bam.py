@@ -5,6 +5,7 @@ import json
 import tensorflow as tf
 from common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
 from ..common.service import Service
+from ..common import parse
 from tensorflow.contrib.persona import queues, pipeline
 
 persona_ops = tf.contrib.persona.persona_ops()
@@ -18,6 +19,9 @@ class ExportBamService(Service):
     
     def extract_run_args(self, args):
         dataset_dir = args.dataset_dir
+        if dataset_dir is None:
+            file_path = args.dataset[parse.filepath_key]
+            dataset_dir = os.path.dirname(file_path)
         return (os.path.join(dataset_dir, a) for a in self.extract_run_keys(args=args))
 
     def extract_run_keys(self, args):
@@ -35,7 +39,7 @@ class ExportBamService(Service):
         parser.add_argument("-o", "--output-path", default="", help="Output bam file path")
         parser.add_argument("-t", "--threads", type=int, default=multiprocessing.cpu_count()-1, 
           help="Number of threads to use for compression [{}]".format(multiprocessing.cpu_count()-1))
-        parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), required=True, help="Directory containing ALL of the chunk files")
+        parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), help="Directory containing ALL of the chunk files")
 
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two 
@@ -65,14 +69,11 @@ def export_bam(in_queue, args):
 
   print("BAM output using columns: {}".format(columns))
   # TODO  provide option for reading from Ceph
-  #parsed_chunks = tf.contrib.persona.persona_in_pipe(dataset_dir=local_dir, columns=columns, key=key, 
-                                                     #mmap_pool=mmap_pool, buffer_pool=pp)
 
   result_chunks = pipeline.local_read_pipeline(upstream_tensors=[in_queue.dequeue()], columns=columns)
 
   result_chunk_list = [ list(c) for c in result_chunks ]
 
-  print(result_chunk_list)
   to_parse = pipeline.join(upstream_tensors=result_chunk_list, parallel=args.parallel_parse, multi=True, capacity=8)
 
   parsed_results = pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=to_parse)

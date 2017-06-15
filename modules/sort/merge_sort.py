@@ -5,6 +5,7 @@ from ..common.service import Service
 from common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
 from tensorflow.python.ops import io_ops, variables, string_ops, array_ops, data_flow_ops, math_ops, control_flow_ops
 from tensorflow.python.framework import ops, tensor_shape, common_shapes, constant_op, dtypes
+from ..common import parse
 
 import tensorflow as tf
 
@@ -130,6 +131,7 @@ class SortCommonService(Service):
         dataset = args.dataset
         recs = [ a["path"] for a in dataset["records"] ]
         
+        
         num_file_keys = len(recs)
         if num_file_keys < args.column_grouping:
             print("Column grouping factor too low! Setting to number of file keys ({})".format(num_file_keys))
@@ -213,8 +215,8 @@ class SortCommonService(Service):
     def make_sort_pipeline(self, args, input_gen, buf_pool, bufpair_pool):
 
         ready_to_process = pipeline.join(upstream_tensors=input_gen,
-                                         parallel=args.sort_read_parallel,
-                                         capacity=args.sort_read_parallel, # multiplied by some factor?
+                                         parallel=args.sort_process_parallel,
+                                         capacity=4, # multiplied by some factor?
                                          multi=True, name="ready_to_process")
         # need to unpack better here
         multi_column_gen = list(pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=ready_to_process, buffer_pool=buf_pool))
@@ -227,9 +229,9 @@ class SortCommonService(Service):
             entry.append(num_recs)
             chunks_and_recs.append(entry)
 
-        ready = tf.train.batch_join(chunks_and_recs, batch_size=args.column_grouping, allow_smaller_final_batch=True)
+        ready = tf.train.batch_join(chunks_and_recs, batch_size=args.column_grouping, allow_smaller_final_batch=True, name="chunk_batcher")
        
-        name_queue = pipeline.join([name_generator("intermediate_file")], parallel=args.sort_parallel, capacity=8, multi=False, name="inter_file_gen_q")
+        name_queue = pipeline.join([name_generator("intermediate_file")], parallel=args.sort_parallel, capacity=4, multi=False, name="inter_file_gen_q")
     
         #bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="local_read_buffer_pair_pool")
 
@@ -256,11 +258,16 @@ class SortCommonService(Service):
 class LocalCommonService(SortCommonService):
     def extract_run_args(self, args):
         dataset_dir = args.dataset_dir
+        if dataset_dir is None:
+            file_path = args.dataset[parse.filepath_key]
+            dataset_dir = os.path.dirname(file_path)
+        args.dataset_dir = dataset_dir
+
         return (os.path.join(dataset_dir, a) for a in super().extract_run_args(args=args))
 
     def add_run_args(self, parser):
         super().add_run_args(parser=parser)
-        parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), required=True, help="Directory containing ALL of the chunk files")
+        parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), help="Directory containing ALL of the chunk files")
     
     def on_finish(self, args, results):
         # remove the intermediate files
@@ -269,13 +276,13 @@ class LocalCommonService(SortCommonService):
                 os.remove(os.path.join(args.dataset_dir, f))
 
         # add or change the sort order 
-        #meta = "test.json"
+        meta = "test.json"
         args.dataset['sort'] = 'coordinate' if args.order_by == location_value else 'queryname'
-        #for rec in args.dataset['records']:
-            #rec['path'] = rec['path'].split('_')[0] + "_out_" + str(rec['first'])
+        for rec in args.dataset['records']:
+            rec['path'] = rec['path'].split('_')[0] + "_out_" + str(rec['first'])
         for metafile in os.listdir(args.dataset_dir):
             if metafile.endswith(".json"):
-                with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
+                with open(os.path.join(args.dataset_dir, meta), 'w+') as f:
                     json.dump(args.dataset, f, indent=4)
                 break
         #print("results were {}".format(results))
@@ -296,7 +303,7 @@ class LocalSortService(LocalCommonService):
         return False
 
     def make_inter_writers(self, batch, output_dir, write_parallelism):
-        single = pipeline.join(batch, parallel=write_parallelism, capacity=write_parallelism, multi=True, name="writer_queue")
+        single = pipeline.join(batch, parallel=write_parallelism, capacity=4, multi=True, name="writer_queue")
         types = get_types_for_columns(self.inter_columns)
         print("inter col types {}".format(types))
         #types = [ "structured", "base_compact", "text", "text"]
@@ -321,7 +328,7 @@ class LocalSortService(LocalCommonService):
         return writers
    
     def make_writers(self, args, compressed_bufs):
-        compressed_buf = pipeline.join(compressed_bufs, capacity=4, multi=True, parallel=1)[0]
+        compressed_buf = pipeline.join(compressed_bufs, capacity=4, multi=True, parallel=1, name="final_write_queue")[0]
         
         # add parallelism here if necessary to saturate write bandwidth
         # [compressed_matrix, record_name, first_ord, num_recs, file_name]
@@ -339,7 +346,7 @@ class LocalSortService(LocalCommonService):
     def make_graph(self, in_queue, args):
 
         # TODO remove the _out when we are satisfied it works correctly
-        rec_name = args.dataset['records'][0]['path'][:-1]  #+ "out_" # assuming path name is chunk_file_{ordinal}
+        rec_name = args.dataset['records'][0]['path'][:-1]  + "out_" # assuming path name is chunk_file_{ordinal}
         print("Sorting {} chunks".format(len(args.dataset['records'])))
 
         parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(args.sort_read_parallel))
@@ -365,9 +372,9 @@ class LocalSortService(LocalCommonService):
 
         # these two queues form a barrier, to force downstream to wait until all intermediate superchunks are ready for merge
         # wait for num_inter_files
-        f = tf.train.batch([inter_file_name], batch_size=num_inter_files)
+        f = tf.train.batch([inter_file_name], batch_size=num_inter_files, name="inter_file_batcher")
         # now output them one by one
-        files = tf.train.batch([f], enqueue_many=True, batch_size=1)
+        files = tf.train.batch([f], enqueue_many=True, batch_size=1, name="inter_file_output")
         full_path = tf.string_join([args.dataset_dir, "/", files])
         # needs to be scalar not shape [1] which seems pretty stupid ...
         full_path_scalar = tf.reshape(full_path, [])
@@ -385,11 +392,11 @@ class LocalSortService(LocalCommonService):
             stacked_chunks.append(tf.stack(f))
 
         # batch all the intermediate superchunks that are now mmap'd
-        chunks_to_merge = tf.train.batch(stacked_chunks, batch_size=num_inter_files)
+        chunks_to_merge = tf.train.batch(stacked_chunks, batch_size=num_inter_files, name="mapped_inter_files_to_merge")
         merge_tuple = self.make_merge_pipeline(args=args, chunks_to_merge=chunks_to_merge, record_name=rec_name, bpp=bpp)
         # out_tuple = [results, base, qual, meta, record_name, first_ord, num_recs, file_name]
       
-        compress_queue = pipeline.join(merge_tuple, capacity=4, parallel=args.compress_parallel, multi=False)
+        compress_queue = pipeline.join(merge_tuple, capacity=4, parallel=args.compress_parallel, multi=False, name="to_compress")
 
         compressed_bufs = list(self.make_compressors(compress_queue, buf_pool))
         print(compressed_bufs)

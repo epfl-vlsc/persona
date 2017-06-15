@@ -121,7 +121,7 @@ class SnapCommonService(Service):
         aligners = tuple(make_aligners())
         # aligners: [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
         if args.compress:
-            aligner_results_to_compress = pipeline.join(upstream_tensors=aligners, parallel=args.compress_parallel, multi=True, capacity=32, name="ready_to_compress")
+            aligner_results_to_compress = pipeline.join(upstream_tensors=aligners, parallel=args.compress_parallel, multi=True, capacity=4, name="ready_to_compress")
             to_compressors = (a[0] for a in aligner_results_to_compress)
             around_compressors = (a[1:] for a in aligner_results_to_compress)
             compressed_buffers = pipeline.aligner_compress_pipeline(upstream_tensors=to_compressors)
@@ -129,7 +129,7 @@ class SnapCommonService(Service):
             aligners = tuple(after_compression)
 
         aligned_results = pipeline.join(upstream_tensors=aligners, parallel=args.writers,
-                                        multi=True, capacity=32, name="aligned_results")
+                                        multi=True, capacity=4, name="aligned_results")
 
         ref_seqs, lens = persona_ops.snap_index_reference_sequences(genome_handle=genome)
         return aligned_results, (genome, ref_seqs, lens) # returns [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
