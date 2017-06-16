@@ -6,6 +6,13 @@ import os
 import errno
 import json
 import pysam
+import traceback
+import math
+from ngs import NGS
+from ngs.ErrorMsg import ErrorMsg
+from ngs.ReadCollection import ReadCollection
+from ngs.Read import Read
+
 from ..common.service import Service
 from common.parse import numeric_min_checker, yes_or_no
 from tensorflow.python.ops import data_flow_ops, string_ops
@@ -46,12 +53,14 @@ class ImportSraService(Service):
 
         # TODO sane defaults depending on num schedulable cores
         parser.add_argument("-c", "--chunk", type=numeric_min_checker(1, "chunk size"), default=100000, help="chunk size to create records")
+        parser.add_argument("-k", "--number-ops", type=numeric_min_checker(1, "number of ops"), default = 1, help = "number of parallel ops")
         parser.add_argument("-p", "--parallel-conversion", type=numeric_min_checker(1, "parallel conversion"), default=1, help="number of parallel converters")
         parser.add_argument("-n", "--name", required=True, help="name for the record")
         parser.add_argument("-o", "--out", default=".", help="directory to write the final record to")
         parser.add_argument("-w", "--write", default=1, type=numeric_min_checker(1, "write parallelism"), help="number of parallel writers")
         parser.add_argument("--compress-parallel", default=1, type=numeric_min_checker(1, "compress parallelism"), help="number of parallel compression pipelines")
         parser.add_argument("sra_file",  help="the sra file to convert")
+	
 
     def add_run_args(self, parser):
         pass
@@ -85,11 +94,24 @@ class ImportSraService(Service):
             "name": args.name, "version": 1, "records": self.output_records, "columns": columns
         }
 
-
         bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="bufpool")
-        chunk, num_recs, first_ord = persona_ops.agd_import_sra(path=args.sra_file, num_threads=10, chunk_size=args.chunk, bufpair_pool=bpp)
 
-        compressors = tuple(compress_pipeline(converters=[[chunk, first_ord, num_recs]], compress_parallelism=args.compress_parallel))
+        with NGS.openReadCollection(args.sra_file) as run:
+            # compute window to iterate through
+            numberOfReads = run.getReadCount()
+            readsPerOp = round(math.floor(numberOfReads/args.number_ops)/args.chunk)*args.chunk
+            startr = 1
+            numOps = 1
+            ops = []
+            while numOps < args.number_ops:
+                chunk, num_recs, first_ord = persona_ops.agd_import_sra(path=args.sra_file, num_threads=10, chunk_size=args.chunk, start=startr, count=readsPerOp, bufpair_pool=bpp)
+                startr = startr + readsPerOp;
+                numOps += 1
+                ops.append([chunk, first_ord, num_recs])
+            size = numberOfReads - startr + 1
+            chunk, num_recs, first_ord = persona_ops.agd_import_sra(path=args.sra_file, num_threads=10, chunk_size=args.chunk, start=startr, count=size, bufpair_pool=bpp)
+            ops.append([chunk, first_ord, num_recs])
+        compressors = tuple(compress_pipeline(converters=ops, compress_parallelism=args.compress_parallel))
 
         writers = tuple(writer_pipeline(compressors, args.write, args.name, self.outdir))
 
