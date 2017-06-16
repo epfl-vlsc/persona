@@ -30,13 +30,13 @@ class BWACommonService(Service):
         parser.add_argument("-p", "--parallel", type=int, default=2, help="parallel decompression")
         parser.add_argument("-e", "--enqueue", type=int, default=1, help="parallel enqueuing")
         parser.add_argument("-m", "--mmap-queue", type=int, default=2, help="size of the mmaped file record queue")
-        parser.add_argument("-a", "--aligners", type=numeric_min_checker(1, "number of aligners"), default=1, help="number of aligners")
+        parser.add_argument("-a", "--aligners", type=numeric_min_checker(1, "number of aligners"), default=2, help="number of aligners")
         parser.add_argument("-t", "--aligner-threads", type=numeric_min_checker(1, "number of aligner threads"), 
             default=multiprocessing.cpu_count(), help="the number of threads to use for alignment. >= 1 or >= 3 if paired [num_cpus]")
-        parser.add_argument("-r", "--thread-ratio", type=float, default=0.66, help="Ratio of aligner threads to finalize threads")
-        parser.add_argument("-x", "--subchunking", type=int, default=5000, help="the size of each subchunk (in number of reads)")
-        parser.add_argument("-w", "--writers", type=int, default=0, help="the number of writer pipelines")
-        parser.add_argument("-c", "--compress", default=False, action='store_true', help="compress the output")
+        parser.add_argument("-r", "--thread-ratio", type=float, default=0.35, help="Ratio of aligner threads to finalize threads")
+        parser.add_argument("-x", "--subchunking", type=int, default=5000, help="the size of each subchunk (in number of reads) [5000]")
+        parser.add_argument("-w", "--writers", type=int, default=1, help="the number of writer pipelines ")
+        parser.add_argument("-c", "--compress-parallel", type=int, default=2, help="parallel compression of output. 0 for uncompressed.")
         parser.add_argument("-i", "--index-path", default="/scratch/bwa_index/hs38DH.fa")
         parser.add_argument("-s", "--max-secondary", default=1, help="Max secondary results to store. >= 1 (required for chimaric results")
         parser.add_argument("--paired", default=False, action='store_true', help="interpret dataset as interleaved paired dataset")
@@ -131,6 +131,15 @@ class BWACommonService(Service):
                 yield (aligner_results,) + tuple(pass_around)
 
         aligners = tuple(make_aligners())
+        
+        if args.compress_parallel > 0:
+            aligner_results_to_compress = pipeline.join(upstream_tensors=aligners, parallel=args.compress_parallel, multi=True, capacity=4, name="ready_to_compress")
+            to_compressors = (a[0] for a in aligner_results_to_compress)
+            around_compressors = (a[1:] for a in aligner_results_to_compress)
+            compressed_buffers = pipeline.aligner_compress_pipeline(upstream_tensors=to_compressors)
+            after_compression = ((a,)+tuple(b) for a,b in zip(compressed_buffers, around_compressors))
+            aligners = tuple(after_compression)
+
         aligned_results = pipeline.join(upstream_tensors=aligners, parallel=args.writers, multi=True, capacity=32)
         
         ref_seqs, lens = persona_ops.bwa_index_reference_sequences(index_handle=bwa_index)
@@ -276,7 +285,7 @@ class LocalBWAService(LocalCommonService):
         to_writer_gen = tuple((buffer_list_handle, record_id, first_ordinal, num_records, file_basename) for buffer_list_handle, num_records, first_ordinal, record_id, file_basename in aligner_results)
         #print(to_writer_gen)
         #print(self.write_columns)
-        written_records = tuple(tuple(a) for a in pipeline.local_write_pipeline(upstream_tensors=to_writer_gen, record_types=self.write_columns, compressed=False))
+        written_records = tuple(tuple(a) for a in pipeline.local_write_pipeline(upstream_tensors=to_writer_gen, record_types=self.write_columns, compressed=(args.compress_parallel > 0)))
         final_output_gen = zip(written_records, ((record_id, first_ordinal, num_records, file_basename) for _, num_records, first_ordinal, record_id, file_basename in aligner_results))
         return (b+(a,) for a,b in final_output_gen), run_first
 
