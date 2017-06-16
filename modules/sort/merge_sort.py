@@ -36,7 +36,7 @@ class VerifySortService(Service):
         pass
     def add_run_args(self, parser):
         super().add_run_args(parser=parser)
-        parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), required=True, help="Directory containing ALL of the chunk files")
+        parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), help="Directory containing ALL of the chunk files")
 
     def get_shortname(self):
         return "verify"
@@ -51,6 +51,12 @@ class VerifySortService(Service):
         return False
     
     def make_graph(self, in_queue, args):
+        dataset_dir = args.dataset_dir
+        if dataset_dir is None:
+            file_path = args.dataset[parse.filepath_key]
+            dataset_dir = os.path.dirname(file_path)
+        args.dataset_dir = dataset_dir
+
         records = args.dataset['records']
         first_record = records[0]
         chunk_size = first_record["last"] - first_record["first"]
@@ -60,7 +66,6 @@ class VerifySortService(Service):
             chunknames.append(record['path'])
             lens.append(int(record['last']) - int(record['first']))
 
-        print(lens)
         path = tf.constant(args.dataset_dir + '/')
         names = tf.constant(chunknames)
         sizes = tf.constant(lens)
@@ -131,7 +136,10 @@ class SortCommonService(Service):
         dataset = args.dataset
         recs = [ a["path"] for a in dataset["records"] ]
         
-        
+       
+        rec = dataset["records"][0]
+        args.chunk = int(rec["last"]) - int(rec["first"])
+        print("Chunk size is {}".format(args.chunk))
         num_file_keys = len(recs)
         if num_file_keys < args.column_grouping:
             print("Column grouping factor too low! Setting to number of file keys ({})".format(num_file_keys))
@@ -155,7 +163,7 @@ class SortCommonService(Service):
                           type=numeric_min_checker(minimum=1, message="sorting pipeline min"))
         parser.add_argument("-w", "--write-parallel", default=1, help="number of writing pipelines to run in parallel",
                           type=numeric_min_checker(minimum=1, message="writing pipeline min"))
-        parser.add_argument("--chunk", default=100000, type=numeric_min_checker(1, "need non-negative chunk size"), help="chunk size for final merge stage")
+        #parser.add_argument("--chunk", default=100000, type=numeric_min_checker(1, "need non-negative chunk size"), help="chunk size for final merge stage")
         parser.add_argument("-b", "--order-by", default="location", choices=["location", "metadata"], help="sort by this parameter [location | metadata]")
 
     def make_compressors(self, recs_and_handles, bufpool):
@@ -282,7 +290,7 @@ class LocalCommonService(SortCommonService):
         #    rec['path'] = rec['path'].split('_')[0] + "_out_" + str(rec['first'])
         for metafile in os.listdir(args.dataset_dir):
             if metafile.endswith(".json"):
-                with open(os.path.join(args.dataset_dir, metadata), 'w+') as f:
+                with open(os.path.join(args.dataset_dir, metafile), 'w+') as f:
                     json.dump(args.dataset, f, indent=4)
                 break
         #print("results were {}".format(results))
