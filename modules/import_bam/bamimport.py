@@ -7,23 +7,13 @@ import errno
 import json
 import pysam
 from ..common.service import Service
-from common.parse import numeric_min_checker
+from common.parse import numeric_min_checker, yes_or_no
 from tensorflow.python.ops import data_flow_ops, string_ops
 from tensorflow.python.framework import tensor_shape, dtypes
 from tensorflow.python.training import queue_runner
 
 persona_ops = tf.contrib.persona.persona_ops()
 from tensorflow.contrib.persona import queues, pipeline
-
-def yes_or_no(question):
-    # could this overflow the stack if the user was very persistent?
-    reply = str(input(question+' (y/n): ')).lower().strip()
-    if reply[0] == 'y':
-        return True
-    if reply[0] == 'n':
-        return False
-    else:
-        return yes_or_no("Please enter ")
 
 def mkdir_p(path):
     try:

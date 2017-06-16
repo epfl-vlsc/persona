@@ -224,6 +224,15 @@ class LocalCommonService(BWACommonService):
             file_path = args.dataset[parse.filepath_key]
             dataset_dir = os.path.dirname(file_path)
         args.dataset_dir = dataset_dir
+        
+        if 'results' in args.dataset['columns']:
+            if not yes_or_no("This dataset appears to be aligned. Do you want to realign it (deletes existing results) "):
+                sys.exit(0)
+            else:
+                for f in glob.glob(dataset_dir + "/*.results"):
+                    os.remove(f)
+                for f in glob.glob(dataset_dir + "/*.secondary*"):
+                    os.remove(f)
 
         return (os.path.join(dataset_dir, a) for a in super().extract_run_args(args=args))
 

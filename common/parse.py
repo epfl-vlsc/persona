@@ -1,6 +1,16 @@
 import os
 from argparse import ArgumentTypeError
 
+def yes_or_no(question):
+    # could this overflow the stack if the user was very persistent?
+    reply = str(input(question+' (y/n): ')).lower().strip()
+    if reply[0] == 'y':
+        return True
+    if reply[0] == 'n':
+        return False
+    else:
+        return yes_or_no("Please enter ")
+
 def numeric_min_checker(minimum, message, numeric_type=int):
     def check_number(n):
         n = numeric_type(n)
