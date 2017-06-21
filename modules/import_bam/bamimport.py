@@ -95,7 +95,8 @@ class ImportBamService(Service):
             name, length = item
             refs.append({'index':i, 'length':length, 'name':name})
         self.output_metadata['reference_contigs'] = refs
-
+        self.output_metadata['sort'] = bamfile.header['HD']['SO']
+        print("bamfile sort order is {}".format(self.output_metadata['sort']))
 
         bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="bufpool")
         chunk, num_recs, first_ord = persona_ops.agd_import_bam(path=args.bam_file, num_threads=10, 
@@ -126,6 +127,7 @@ class ImportBamService(Service):
         self.output_records = sorted(self.output_records, key=lambda rec: int(rec['first']))
         # reset with the sorted, i think it makes a copy?
         self.output_metadata['records'] = self.output_records
+
         with open(self.outdir + args.name + '_metadata.json', 'w+') as f:
             json.dump(self.output_metadata, f, indent=4)
 
