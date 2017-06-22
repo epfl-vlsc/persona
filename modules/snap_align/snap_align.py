@@ -5,6 +5,7 @@ from ..common.service import Service
 from common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker, yes_or_no
 from ..common import parse
 import glob
+import sys
 
 import tensorflow as tf
 import itertools
