@@ -133,7 +133,20 @@ class SnapCommonService(Service):
                                         multi=True, capacity=4, name="aligned_results")
 
         ref_seqs, lens = persona_ops.snap_index_reference_sequences(genome_handle=genome)
-        return aligned_results, (genome, ref_seqs, lens) # returns [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
+        # Taking this out because it currently breaks distributed runtime
+        return aligned_results, (genome,) # ref_seqs, lens) # returns [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
+
+    def on_finish(self, args, results):
+        columns = args.dataset['columns']
+        if "results" not in columns:
+            columns.append('results')
+        for i in range(args.max_secondary):
+            to_add = "secondary{}".format(i)
+            if to_add not in columns:
+                columns.append(to_add)
+        with open(args.dataset[parse.filepath_key], 'w+') as f:
+            args.dataset.pop(parse.filepath_key, None)  # we dont need to write the actual file path out
+            json.dump(args.dataset, f, indent=4)
 
 class CephCommonService(SnapCommonService):
 
@@ -241,7 +254,7 @@ class LocalCommonService(SnapCommonService):
         super().add_run_args(parser=parser)
         parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), help="Directory containing ALL of the chunk files")
     
-    def on_finish(self, args, results):
+    def _on_finish(self, args, results):
         # add results column to metadata
         # add reference data to metadata
         # TODO do the same thing for the ceph version
