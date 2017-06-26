@@ -44,7 +44,7 @@ class PrintChunkService(Service):
 
         ops, run_once = print_local(in_queue, args)
 
-        return [[ops]], run_once
+        return [ops], run_once
 
 def print_local(in_queue, args):
   manifest = args.dataset
@@ -96,6 +96,6 @@ def print_local(in_queue, args):
     ref_lens.append(contig['length'])
     ref_seqs.append(contig['name'])
 
-  result = persona_ops.agd_print_multi(ref_sequences=ref_seqs, ref_seq_sizes=ref_lens,tensor_queue=q.queue_ref,num_records=num_recs)
+  result = persona_ops.agd_print_multi(ref_sequences=ref_seqs, ref_seq_sizes=ref_lens,tensor_queue=q.queue_ref)
 
-  return result, []
+  return [result], []
