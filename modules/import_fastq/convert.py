@@ -49,7 +49,7 @@ class ConvertService(Service):
 
         return [final_tensor], []
     
-    def on_finish(self, args, results, variables):
+    def on_finish(self, args, results):
         # self.output_records
         for res in results:
             name_bytes, first_ordinal, num_records = res

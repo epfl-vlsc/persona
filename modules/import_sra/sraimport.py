@@ -117,7 +117,7 @@ class ImportSraService(Service):
 
         return writers, []
     
-    def on_finish(self, args, results, variables):
+    def on_finish(self, args, results):
         for res in results:
             base, qual, meta, first_ordinal, num_records = res[0]
 

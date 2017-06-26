@@ -36,10 +36,6 @@ def add_default_module_args(parser):
     parser.add_argument("--summary", default=False, action="store_true", help="Add TensorFlow summary info to the graph")
     parser.add_argument("--summary-directory", default=os.path.join(cwd, "traces"), type=parse.path_exists_checker(make_if_empty=True), help="directory to record summary information into")
 
-def create_variables(variable_inits):
-    for name, kwargs in variable_inits.items():
-        yield tf.Variable(name=name, **kwargs)
-
 def execute(args, modules):
   record_stats = args.record
   stats_directory = args.record_directory
@@ -67,8 +63,6 @@ def execute(args, modules):
   has_service_ops = len(service_ops) > 0
   if has_service_ops:
       service_sink = pipeline.join(upstream_tensors=service_ops, capacity=64, parallel=1, multi=True, name="global_sink_queue")
-
-  variables = tuple(create_variables(variable_inits=service.variables))
 
   init_ops = [tf.global_variables_initializer(), tf.local_variables_initializer()]
 
@@ -120,8 +114,7 @@ def execute(args, modules):
               coord.request_stop()
               coord.join(threads, stop_grace_period_secs=10)
 
-          variable_values = [ sess.run(v) for v in variables ]
-          service.on_finish(args, results, variables=variable_values)
+          service.on_finish(args, results)
   if summary:
       summary_writer.flush(); summary_writer.close()
   if record_stats:

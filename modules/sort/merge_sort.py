@@ -277,7 +277,7 @@ class LocalCommonService(SortCommonService):
         super().add_run_args(parser=parser)
         parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), help="Directory containing ALL of the chunk files")
     
-    def on_finish(self, args, results, variables):
+    def on_finish(self, args, results):
         # remove the intermediate files
         for f in os.listdir(args.dataset_dir):
             if self.inter_file_name in f:
