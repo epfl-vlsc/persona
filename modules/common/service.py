@@ -1,11 +1,17 @@
 import tensorflow as tf
 from ..common import parse
+import logging
+
+logging.basicConfig()
+log = logging.getLogger(__file__)
+log.setLevel(logging.DEBUG)
 
 class Service:
     """ A class representing a service module in Persona """
 
     def __init__(self):
         self._variables = {}
+        self._declared_variables = {}
 
     def get_shortname(self):
         raise NotImplementedError
@@ -63,8 +69,34 @@ class Service:
     def variables(self):
         return self._variables
 
-    def _set_variable(self, name, **kwargs):
-        self._variables[name] = kwargs
+    # This should really only be called by subclasses
+    def set_variable(self, name, dtype, shape, initializer):
+        if name not in self._declared_variables:
+            raise Exception("Variable '{name}' not declared. You must declare the variable and its parameters before using".format(name=name))
+        else:
+            declared = self._declared_variables[name]
+            expected_dtype = declared['dtype']
+            expected_shape = declared['shape']
+            if expected_dtype != dtype:
+                raise Exception("Declared dtype {declared} doesn't match expected {expected}".format(expected=expected_dtype,
+                                                                                                     declared=dtype))
+            if expected_shape != shape:
+                raise Exception("Declared shape {declared} doesn't match expected {expected}".format(expected=expected_shape,
+                                                                                                     declared=shape))
+        if name in self._declared_variables:
+            log.warning("Resetting variable '{name}'. Is this intentional?".format(name=name))
+        self._variables[name] = {
+            'dtype': dtype,
+            'shape': shape,
+            'initializer': initializer
+        }
+
+    def set_declared_variable(self, name, dtype, shape):
+        if name in self._declared_variables:
+            log.warning("Redeclaring variable '{name}'. Is this intentional?".format(name=name))
+        self._declared_variables[name] = {
+            'dtype': dtype, 'shape': shape
+        }
 
 class ServiceSingleton:
     """ A class to wrap a service up to make a singleton instance.
