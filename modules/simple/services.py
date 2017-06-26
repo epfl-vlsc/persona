@@ -5,7 +5,7 @@ persona_ops = tf.contrib.persona.persona_ops()
 from tensorflow.contrib.persona import queues, pipeline
 
 class PrintFinish(Service):
-    def on_finish(self, args, results):
+    def on_finish(self, args, results, variables):
         print("Got results: {}".format(results))
 
 class EchoService(PrintFinish):

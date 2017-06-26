@@ -109,7 +109,7 @@ class ImportBamService(Service):
 
         return writers, []
     
-    def on_finish(self, args, results):
+    def on_finish(self, args, results, variables):
         for res in results:
             if args.unaligned:
                 base, qual, meta, first_ordinal, num_records = res[0]

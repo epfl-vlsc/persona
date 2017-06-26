@@ -4,6 +4,9 @@ from ..common import parse
 class Service:
     """ A class representing a service module in Persona """
 
+    def __init__(self):
+        self._variables = {}
+
     def get_shortname(self):
         raise NotImplementedError
 
@@ -52,9 +55,16 @@ class Service:
         evaluate, and a list of run-once ops"""
         raise NotImplementedError
 
-    def on_finish(self, args, results):
+    def on_finish(self, args, results, variables):
         """ Called by runtime when execution finished """
         pass
+
+    @property
+    def variables(self):
+        return self._variables
+
+    def _set_variable(self, name, **kwargs):
+        self._variables[name] = kwargs
 
 class ServiceSingleton:
     """ A class to wrap a service up to make a singleton instance.
