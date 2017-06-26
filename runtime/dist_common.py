@@ -45,6 +45,23 @@ def make_cluster_spec(cluster_members):
     cluster_spec = tf.train.ClusterSpec(cluster=cluster)
     return cluster_spec
 
+def make_variables(values, declarations, cluster_name, queue_index, service_name):
+    with tf.device("/job:{cluster_name}/task:{task_idx}".format(cluster_name=cluster_name, task_idx=queue_index)): # me
+        with tf.variable_scope(service_name):
+            for name, value in values.items():
+                declaration = declarations[name]
+                dtype = declaration["dtype"]
+                shape = declaration["shape"]
+                yield tf.get_variable(name=name, dtype=dtype, shape=shape, initializer=value, trainable=False)
+
+def make_variable_references(declarations, cluster_name, queue_index, service_name):
+    with tf.device("/job:{cluster_name}/task:{task_idx}".format(cluster_name=cluster_name, task_idx=queue_index)): # me
+        with tf.variable_scope(service_name):
+            for name, declaration in declarations.items():
+                dtype = declaration["dtype"]
+                shape = declaration["shape"]
+                yield tf.get_variable(name=name, dtype=dtype, shape=shape, trainable=False)
+
 @contextlib.contextmanager
 def quorum(cluster_spec, task_index, session):
     def create_shutdown_queues():

@@ -96,12 +96,16 @@ def execute(args, modules):
       service_ops = tuple(service_ops)
       assert len(service_ops) + len(service_init_ops) > 0
 
-      init_ops = [tf.global_variables_initializer(), tf.local_variables_initializer()]
-
       # TODO should a final join (if necessary) be moved into the service itself?
-
       service_sink = pipeline.join(upstream_tensors=service_ops, capacity=32, parallel=1, multi=True, name="sink_join")[0]
 
+  variables = list(dist_common.make_variables(values=service.variables,
+                                              declarations=service.declared_variables,
+                                              cluster_name=cluster_name,
+                                              queue_index=queue_index,
+                                              service_name=service_name))
+
+  init_ops = [tf.global_variables_initializer(), tf.local_variables_initializer()]
   queue_device = dist_common.make_queue_device_name(cluster_name=cluster_name, queue_index=queue_index)
   with tf.device(queue_device):
       final_op = out_queue.enqueue(service_sink, name="final_queue_enqueue_task_{}".format(task_index))

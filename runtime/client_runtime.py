@@ -67,6 +67,11 @@ def execute(args, modules):
   dequeue_single_op = out_queue.dequeue(name="client_dequeue")
   expected_result_count = len(run_arguments) # FIXME we're just making this assumption for now!
 
+  variables = tuple(dist_common.make_variable_references(declarations=service.declared_variables,
+                                                         cluster_name=cluster_name,
+                                                         queue_index=queue_index,
+                                                         service_name=service_name))
+
   # run our local graph
   queue_host = args.queue_host
   queue_port = args.queue_port
@@ -86,6 +91,7 @@ def execute(args, modules):
                   log.debug("Got result: {}".format(next_result))
                   expected_result_count -= 1
                   results.append(next_result)
-              service.on_finish(args=args, results=results)
+              variable_values = sess.run(variables)
+              service.on_finish(args=args, results=results, variables=variable_values)
           except tf.errors.OutOfRangeError:
               log.error("Got out of range error! Session: {}".format(target))

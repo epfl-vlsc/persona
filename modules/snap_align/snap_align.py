@@ -17,6 +17,12 @@ class SnapCommonService(Service):
     columns = ["base", "qual"]
     write_columns = []
 
+    def __init__(self):
+        super().__init__()
+        unknown_vector = tf.TensorShape([None])
+        self.set_declared_variable(name="ref_sequences", dtype=tf.string, shape=unknown_vector)
+        self.set_declared_variable(name="lens", dtype=tf.int32, shape=unknown_vector)
+
     def extract_run_args(self, args):
         dataset = args.dataset
         return (a["path"] for a in dataset["records"])
@@ -133,7 +139,9 @@ class SnapCommonService(Service):
                                         multi=True, capacity=4, name="aligned_results")
 
         ref_seqs, lens = persona_ops.snap_index_reference_sequences(genome_handle=genome)
-        return aligned_results, (genome, ref_seqs, lens) # returns [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
+        self.set_variable(name="ref_sequences", initializer=ref_seqs)
+        self.set_variable(name="lens", initializer=lens)
+        return aligned_results, (genome,) # returns [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
 
 class CephCommonService(SnapCommonService):
 

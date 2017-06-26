@@ -69,27 +69,29 @@ class Service:
     def variables(self):
         return self._variables
 
+    @property
+    def declared_variables(self):
+        return self._declared_variables
+
     # This should really only be called by subclasses
-    def set_variable(self, name, dtype, shape, initializer):
+    def set_variable(self, name, initializer):
         if name not in self._declared_variables:
             raise Exception("Variable '{name}' not declared. You must declare the variable and its parameters before using".format(name=name))
         else:
             declared = self._declared_variables[name]
             expected_dtype = declared['dtype']
             expected_shape = declared['shape']
-            if expected_dtype != dtype:
+            actual_shape = initializer.get_shape()
+            actual_dtype = initializer.dtype
+            if expected_dtype != actual_dtype:
                 raise Exception("Declared dtype {declared} doesn't match expected {expected}".format(expected=expected_dtype,
-                                                                                                     declared=dtype))
-            if expected_shape != shape:
+                                                                                                     declared=actual_dtype))
+            if not expected_shape.is_compatible_with(actual_shape):
                 raise Exception("Declared shape {declared} doesn't match expected {expected}".format(expected=expected_shape,
-                                                                                                     declared=shape))
-        if name in self._declared_variables:
+                                                                                                     declared=actual_shape))
+        if name in self._variables:
             log.warning("Resetting variable '{name}'. Is this intentional?".format(name=name))
-        self._variables[name] = {
-            'dtype': dtype,
-            'shape': shape,
-            'initializer': initializer
-        }
+        self._variables[name] = initializer
 
     def set_declared_variable(self, name, dtype, shape):
         if name in self._declared_variables:

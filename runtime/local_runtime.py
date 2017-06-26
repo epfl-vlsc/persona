@@ -37,8 +37,8 @@ def add_default_module_args(parser):
     parser.add_argument("--summary-directory", default=os.path.join(cwd, "traces"), type=parse.path_exists_checker(make_if_empty=True), help="directory to record summary information into")
 
 def create_variables(variable_inits):
-    for name, kwargs in variable_inits.items():
-        yield tf.Variable(name=name, **kwargs)
+    for name, value in variable_inits.items():
+        yield tf.get_variable(name=name, initializer=value, trainable=False)
 
 def execute(args, modules):
   record_stats = args.record
