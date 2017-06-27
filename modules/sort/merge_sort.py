@@ -132,6 +132,9 @@ class SortCommonService(Service):
 
     inter_file_name = "intermediate_file"
 
+    def distributed_capability(self):
+        return False
+
     def extract_run_args(self, args):
         dataset = args.dataset
         recs = [ a["path"] for a in dataset["records"] ]
