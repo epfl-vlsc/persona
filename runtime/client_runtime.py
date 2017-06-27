@@ -63,6 +63,9 @@ def execute(args, modules):
                                                        output_dtypes=output_dtypes,
                                                        output_shapes=output_shapes)
 
+  uniq_lens = set(len(a) for a in run_arguments)
+  if len(uniq_lens) != 1:
+      raise Exception("all run arguments must be the same length. Got lengths {}".format(uniq_lens))
   transposed = [list(i)for i in zip(*run_arguments)]
   enqueue_op = in_queue.enqueue_many(vals=transposed, name=service_name+"_client_enqueue")
   dequeue_single_op = out_queue.dequeue(name="client_dequeue")
