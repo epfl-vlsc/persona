@@ -13,6 +13,11 @@ import itertools
 persona_ops = tf.contrib.persona.persona_ops()
 from tensorflow.contrib.persona import queues, pipeline
 
+import logging
+logging.basicConfig()
+log = logging.getLogger(__file__)
+log.setLevel(logging.DEBUG)
+
 class SnapCommonService(Service):
     columns = ["base", "qual"]
     write_columns = []
@@ -161,7 +166,11 @@ class CephCommonService(SnapCommonService):
     def extract_run_args(self, args):
         dataset = args.dataset
         namespace_key = "namespace"
-        namespace = dataset.get(namespace_key, "")
+        if namespace_key in dataset:
+            namespace = dataset[namespace_key]
+        else:
+            namespace = dataset['name']
+            log.warning("Namespace key '{n}' not in dataset file. defaulting to dataset name '{dn}'".format(n=namespace_key, dn=namespace))
         return ((a, namespace) for a in super().extract_run_args(args=args))
 
     def add_graph_args(self, parser):
