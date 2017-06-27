@@ -63,7 +63,8 @@ def execute(args, modules):
                                                        output_dtypes=output_dtypes,
                                                        output_shapes=output_shapes)
 
-  enqueue_op = in_queue.enqueue_many(vals=run_arguments, name=service_name+"_client_enqueue")
+  transposed = [list(i)for i in zip(*run_arguments)]
+  enqueue_op = in_queue.enqueue_many(vals=transposed, name=service_name+"_client_enqueue")
   dequeue_single_op = out_queue.dequeue(name="client_dequeue")
   expected_result_count = len(run_arguments) # FIXME we're just making this assumption for now!
 
