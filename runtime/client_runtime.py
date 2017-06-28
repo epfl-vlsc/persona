@@ -49,6 +49,8 @@ def execute(args, modules):
     raise Exception("Service {} does not support distributed execution".format(args.service))
 
   run_arguments = tuple(service.extract_run_args(args=args))
+  if len(run_arguments) == 0:
+      raise Exception("Client must have at least one run argument!")
   input_dtypes = service.input_dtypes(args=args)
   input_shapes = service.input_shapes(args=args)
   output_dtypes = service.output_dtypes(args=args)
@@ -63,6 +65,9 @@ def execute(args, modules):
                                                        output_dtypes=output_dtypes,
                                                        output_shapes=output_shapes)
 
+  first_elem = run_arguments[0]
+  if not isinstance(first_elem, (tuple,list)):
+      run_arguments = [(a,) for a in run_arguments]
   uniq_lens = set(len(a) for a in run_arguments)
   if len(uniq_lens) != 1:
       raise Exception("all run arguments must be the same length. Got lengths {}".format(uniq_lens))
