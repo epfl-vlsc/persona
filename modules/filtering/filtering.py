@@ -37,11 +37,16 @@ class FilteringService(Service):
     
     def add_graph_args(self, parser):
         # adds the common args to all graphs
+        parser.add_argument("-c", "--chunk", type=numeric_min_checker(1, "chunk size"), default=100000, help="chunk size to create records")
         parser.add_argument("-p", "--parallel-parse", type=int, default=1, help="Parallelism of decompress stage")
-        parser.add_argument("-o", "--output-path", default="", help="Output dataset directory")
+        parser.add_argument("-n", "--name", required=True, help="name for the record")
+        parser.add_argument("-o", "--out", default=".", help="directory to write the final record to")
         parser.add_argument("-t", "--threads", type=int, default=multiprocessing.cpu_count()-1, 
           help="Number of threads to use for compression [{}]".format(multiprocessing.cpu_count()-1))
         parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), help="Directory containing ALL of the chunk files")
+        parser.add_argument("--unaligned", default=False, action='store_true', help="Set true if BAM file is unaligned")
+        parser.add_argument("--compress-parallel", default=1, type=numeric_min_checker(1, "compress parallelism"), help="number of parallel compression pipelines")
+        parser.add_argument("-q", "--query", type=string, required=True, help="The query/predicate according to which dataset has to be filtered")
 
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two 
@@ -106,7 +111,7 @@ def filtering_local(in_queue, args):
   enqueue_op = q.enqueue([num_recs, results, bases, quals, meta])
   tf.train.queue_runner.add_queue_runner(tf.train.queue_runner.QueueRunner(q, [enqueue_op]))
 
-  op = persona_ops.agd_filtering(tensor_queue=q.queue_ref)
+  op = persona_ops.agd_filtering(chunk_size=args.chunk, unaligned=args.unaligned,query=args.query,tensor_queue=q.queue_ref, ***bpp***)
 
   return [op],[]
 
