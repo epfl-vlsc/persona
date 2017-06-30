@@ -7,6 +7,7 @@ from tensorflow.python.ops import data_flow_ops, string_ops
 
 from ..common.service import Service
 from common.parse import numeric_min_checker, path_exists_checker
+from ..common import parse
 
 import tensorflow as tf
 
@@ -28,45 +29,51 @@ class CalculateCoverageService(Service):
     def extract_run_args(self, args):
         dataset = args.dataset
         paths = [ a["path"] for a in dataset["records"] ]
-        print(paths)
         dataset_dir = args.dataset_dir
+        if dataset_dir is None:
+            file_path = args.dataset[parse.filepath_key]
+            dataset_dir = os.path.dirname(file_path)
         return (os.path.join(dataset_dir, a) for a in paths)
 
     def add_graph_args(self, parser):
         parser.add_argument("-p", "--parse-parallel", default=1, type=numeric_min_checker(minimum=1, message="read parallelism"),
                             help="total paralellism level for reading data from disk")
 
-        parser.add_argument("-i", "--dataset-dir", type=path_exists_checker(), required=True, help="Directory containing ALL of the chunk files")
-        parser.add_argument("-scale", "--scale", default=1,type = int, help="change the scale of the coverage found")
-        parser.add_argument("-max", "--max", default=-1, type = int, help="restrict max coverage of histogram")
-        parser.add_argument("-bg", "--bedgraph", default=False, action="store_true", help="output in bedgraph format ")
-        parser.add_argument("-d", "--d", default=False, action="store_true", help="reporting per-base genome coverage(zeroes as well)")
-        parser.add_argument("-strand","--strand", default='B', help="individual coverage for + and - strands")
-        parser.add_argument("-bga", "--bedgrapha", default=False, action="store_true", help="output in bedgraph format(zeroes as well)")
-        parser.add_argument("-dz", "--dz", default=False, action="store_true", help="reporting per-base genome coverage")
+        parser.add_argument("-i", "--dataset-dir", type=path_exists_checker(),  help="Directory containing ALL of the chunk files")
+        parser.add_argument("-scale", "--scale", default=1,type = int, help="Each coverage value is multiplied by this factor before being reported. Default is 1")
+        parser.add_argument("-max", "--max", default=-1, type = int, help="Combine all positions with a depth >= max into a single bin in the histogram")
+        parser.add_argument("-bg", "--bg", default=False, action="store_true", help="Report depth in BedGraph format")
+        parser.add_argument("-d", "--d", default=False, action="store_true", help="Report the depth at each genome position with 1-based coordinates")
+        parser.add_argument("-strand","--strand", default='B', help="Calculate coverage of intervals from a specific strand")
+        parser.add_argument("-bga" , "--bga",default=False, action="store_true", help="Report depth in BedGraph format along with zero-entries")
+        parser.add_argument("-dz", "--dz" ,default=False, action="store_true", help="Report the depth at each genome position with 0-based coordinates")
 
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two
         things: a list of tensors which the runtime will
         evaluate, and a list of run-once ops"""
         # make the graph
-        if not os.path.exists(args.dataset_dir) and os.path.isfile(args.dataset_dir):
+        dataset_dir = args.dataset_dir
+        if dataset_dir is None:
+            file_path = args.dataset[parse.filepath_key]
+            dataset_dir = os.path.dirname(file_path)
+        if not os.path.exists(dataset_dir) and os.path.isfile(dataset_dir):
             raise EnvironmentError("metadata file '{m}' either doesn't exist or is not a file".format(m=args.dataset))
 
         if in_queue is None:
             raise EnvironmentError("in queue is none")
 
-        dataset_dir = os.path.dirname(args.dataset_dir)
+        dataset_dir = os.path.dirname(dataset_dir)
         op = agd_calculate_coverage_local(in_queue=in_queue,
                                        outdir=dataset_dir,
                                        parallel_parse=args.parse_parallel,
                                        scale=args.scale,
                                        argsj = args,
                                        max = args.max,
-                                       bg = args.bedgraph,
+                                       bg = args.bg,
                                        d = args.d,
                                        strand = args.strand,
-                                       bga = args.bedgrapha,
+                                       bga = args.bga,
                                        dz = args.dz)
         run_once = []
         return [[op]] , run_once
@@ -112,15 +119,12 @@ def agd_calculate_coverage_local(in_queue, argsj,outdir=None, parallel_parse=1,s
     parsed_result = pipeline.join(parsed_results_list, parallel=1, capacity=8, multi=True)[0]
 
 
-    print(parsed_result)
+
     result_buf, num_results, first_ord, record_id = parsed_result
     result_buf = tf.unstack(result_buf)[0]
-    print(result_buf)
+
 
 
     result = persona_ops.agd_gene_coverage(results_handle=result_buf, num_records=num_results,ref_sequences=ref_seqs,ref_seq_sizes=ref_lens,scale = scale, max= max,bg = bg,d = d, strand = strand, dz = dz,bga= bga,name="calculatecoverageop")
-
-
-
 
     return result
