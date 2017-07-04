@@ -56,7 +56,7 @@ class MarkDuplicatesService(Service):
                                        parallel_parse=args.parse_parallel, 
                                        parallel_write=args.write_parallel)
         run_once = []
-        return op, run_once 
+        return [op], run_once 
 
 def _make_writers(compressed_batch, output_dir, write_parallelism):
 
