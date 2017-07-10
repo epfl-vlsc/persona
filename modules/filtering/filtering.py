@@ -69,7 +69,7 @@ class FilteringService(Service):
         parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), help="Directory containing ALL of the chunk files")
         parser.add_argument("--unaligned", default=False, action='store_true', help="Set true if BAM file is unaligned")
         parser.add_argument("--compress-parallel", default=1, type=numeric_min_checker(1, "compress parallelism"), help="number of parallel compression pipelines")
-        parser.add_argument("-q", "--query", required=True, help="The query/predicate according to which dataset has to be filtered")
+        parser.add_argument("-q", "--query", required=True, type=str, help="The query/predicate according to which dataset has to be filtered")
 
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two 
@@ -77,11 +77,12 @@ class FilteringService(Service):
         evaluate, and a list of run-once ops"""
         # make the graph
 
-        print(args.name + '\n' + args.query + '\n' )        
+        print(args.name + '\n')        
+        # print(args.name + '\n' + args.query + '\n' )        
 
         self.outdir = os.path.abspath(args.out) + '/'
         mkdir_p(self.outdir)
-        print("BAM import creating new dataset in {}".format(self.outdir))
+        print("Filter creating new dataset in {}".format(self.outdir))
 
         self.output_records = []
         columns = ['base', 'qual', 'metadata'] if args.unaligned else ['base', 'qual', 'metadata', 'results']
@@ -99,12 +100,16 @@ class FilteringService(Service):
         self.output_metadata['reference_contigs'] = refs
         # self.output_metadata['sort'] = bamfile.header['HD']['SO']
 
-        ops, run_once = filtering_local(in_queue, args)
+        ops, run_once = filtering_local(self, in_queue, args)
 
-        return [ops], run_once
+        print(args.name + '\n')        
+
+        return ops, run_once
 
     def on_finish(self, args, results):
+        print("CALLED ON_FINISH\n")
         for res in results:
+            print("in results loop\n")
             if args.unaligned:
                 base, qual, meta, first_ordinal, num_records = res[0]
             else:
@@ -125,7 +130,7 @@ class FilteringService(Service):
         with open(self.outdir + args.name + '_metadata.json', 'w+') as f:
             json.dump(self.output_metadata, f, indent=4)
 
-def filtering_local(in_queue, args):
+def filtering_local(self, in_queue, args):
   manifest = args.dataset
 
   if 'reference' not in manifest:
@@ -188,9 +193,10 @@ def filtering_local(in_queue, args):
   bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="bufpool")
 
   chunk, num_recs, first_ord = persona_ops.agd_filtering(chunk_size=args.chunk, unaligned=args.unaligned,query=args.query,tensor_queue=q.queue_ref, bufpair_pool=bpp)
-
+  # chunk, num_recs, first_ord = persona_ops.agd_filtering(chunk_size=args.chunk, unaligned=args.unaligned, tensor_queue=q.queue_ref, bufpair_pool=bpp)
+  # print("in local, printing chunk :" + chunk + ". num_recs :" + tf.to_int32(num_recs) + ". and first_ordinal :" + tf.to_int64(first_ord) + ".\n")
   compressors = tuple(compress_pipeline(converters=[[chunk, first_ord, num_recs]], compress_parallelism=args.compress_parallel))
-
+  print("between\n")
   writers = tuple(writer_pipeline(compressors, args.write, args.name, self.outdir))
   #final = pipeline.join(upstream_tensors=writers, capacity=8, parallel=1, multi=True)[0]
 
@@ -226,13 +232,15 @@ def filtering_local(in_queue, args):
 
 def compress_pipeline(converters, compress_parallelism):
     converted_batch = pipeline.join(converters, parallel=compress_parallelism, capacity=8, multi=True, name="compress_input")
-
+    print("compress\n")
     buf_pool = persona_ops.buffer_pool(size=0, bound=False, name="bufpool")
 
     for chunk, first_ord, num_recs in converted_batch:
+        print("loop comp\n")
         cols = tf.unstack(chunk)
         out = []
         for col in cols:
+            print("col loop\n")
             out.append(persona_ops.buffer_pair_compressor(buffer_pool=buf_pool, buffer_pair=col))
 
         out_stacked = tf.stack(out)
@@ -242,15 +250,16 @@ def compress_pipeline(converters, compress_parallelism):
 def writer_pipeline(compressors, write_parallelism, record_id, output_dir):
     prefix_name = tf.constant("{}_".format(record_id), name="prefix_string")
     compressed_batch = pipeline.join(compressors, parallel=write_parallelism, capacity=8, multi=True, name="write_input")
-
+    print("in writer\n")
     types = ['base_compact', 'text', 'text', 'structured']
     exts = ['.base', '.qual', '.metadata', '.results']
     for chunk_stacked, first_ordinal, num_recs in compressed_batch:
         chunks = tf.unstack(chunk_stacked)
         first_ord_as_string = string_ops.as_string(first_ordinal, name="first_ord_as_string")
-
+        print("somewhere")
         paths = []
         for i, chunk in enumerate(chunks):
+            print("chunks")
             key = string_ops.string_join([output_dir, prefix_name, first_ord_as_string, exts[i]], name="key_string")
             paths.append(persona_ops.agd_file_system_buffer_writer(record_id=record_id,
                                                        record_type=types[i],
