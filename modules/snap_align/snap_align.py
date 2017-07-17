@@ -139,7 +139,7 @@ class SnapCommonService(Service):
 
         ref_seqs, lens = persona_ops.snap_index_reference_sequences(genome_handle=genome)
         # Taking this out because it currently breaks distributed runtime
-        return aligned_results, (genome,) # ref_seqs, lens) # returns [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
+        return aligned_results, (genome, ref_seqs, lens) # returns [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
 
     def on_finish(self, args, results):
         columns = args.dataset['columns']
@@ -263,16 +263,18 @@ class LocalCommonService(SnapCommonService):
         super().add_run_args(parser=parser)
         parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), help="Directory containing ALL of the chunk files")
     
-    def _on_finish(self, args, results):
+    def on_finish(self, args, results):
         # add results column to metadata
         # add reference data to metadata
         # TODO do the same thing for the ceph version
 
         columns = args.dataset['columns']
         _, ref_seqs, lens = results[0]
+        #print(ref_seqs.decode("utf-8"))
+        lens = lens.decode("utf-8").split(',')
         ref_list = []
-        for i, ref in enumerate(ref_seqs):
-            ref_list.append({'name':ref.decode("utf-8"), 'length':lens[i].item(), 'index':i})
+        for i, ref in enumerate(ref_seqs.decode("utf-8").split(',')):
+            ref_list.append({'name':ref, 'length':lens[i], 'index':i})
         args.dataset['reference_contigs'] = ref_list
         args.dataset['reference'] = args.index_path
 
