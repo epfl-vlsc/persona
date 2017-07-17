@@ -271,9 +271,9 @@ class LocalCommonService(SnapCommonService):
         columns = args.dataset['columns']
         _, ref_seqs, lens = results[0]
         #print(ref_seqs.decode("utf-8"))
-        lens = lens.decode("utf-8").split(',')
+        lens = lens.decode("utf-8").split('|')
         ref_list = []
-        for i, ref in enumerate(ref_seqs.decode("utf-8").split(',')):
+        for i, ref in enumerate(ref_seqs.decode("utf-8").split('|')):
             ref_list.append({'name':ref, 'length':lens[i], 'index':i})
         args.dataset['reference_contigs'] = ref_list
         args.dataset['reference'] = args.index_path
