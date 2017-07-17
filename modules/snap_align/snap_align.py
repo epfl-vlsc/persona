@@ -142,6 +142,7 @@ class SnapCommonService(Service):
         return aligned_results, (genome,) # ref_seqs, lens) # returns [(buffer_list_handle, num_records, first_ordinal, record_id, pass_around X N) x N], that is COMPLETELY FLAT
 
     def on_finish(self, args, results):
+        print("I get called instead!")
         columns = args.dataset['columns']
         if "results" not in columns:
             columns.append('results')
@@ -242,12 +243,13 @@ class CephSnapService(CephCommonService):
         return output_tensors, run_first
 
 class LocalCommonService(SnapCommonService):
+    print("this class is called")
     def extract_run_args(self, args):
         dataset_dir = args.dataset_dir
         if dataset_dir is None:
             file_path = args.dataset[parse.filepath_key]
             dataset_dir = os.path.dirname(file_path)
-       
+        print("heelloooo")      
         if 'results' in args.dataset['columns']:
             if not yes_or_no("This dataset appears to be aligned. Do you want to realign it (deletes existing results) "):
                 sys.exit(0)
@@ -267,12 +269,14 @@ class LocalCommonService(SnapCommonService):
         # add results column to metadata
         # add reference data to metadata
         # TODO do the same thing for the ceph version
-
+        print("finishhhhiinnnngnggggg")
         columns = args.dataset['columns']
         _, ref_seqs, lens = results[0]
         ref_list = []
         for i, ref in enumerate(ref_seqs):
             ref_list.append({'name':ref.decode("utf-8"), 'length':lens[i].item(), 'index':i})
+        print("ref list")
+        print(ref_list);
         args.dataset['reference_contigs'] = ref_list
         args.dataset['reference'] = args.index_path
 
