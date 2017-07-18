@@ -77,9 +77,6 @@ class FilteringService(Service):
         evaluate, and a list of run-once ops"""
         # make the graph
 
-        print(args.name + '\n')        
-        # print(args.name + '\n' + args.query + '\n' )        
-
         self.outdir = os.path.abspath(args.out) + '/'
         mkdir_p(self.outdir)
         print("Filter creating new dataset in {}".format(self.outdir))
@@ -102,14 +99,12 @@ class FilteringService(Service):
 
         ops, run_once = filtering_local(self, in_queue, args)
 
-        print(args.name + '\n')        
-
         return ops, run_once
 
     def on_finish(self, args, results):
-        print("CALLED ON_FINISH\n")
+        # print("CALLED ON_FINISH\n")
         for res in results:
-            print("in results loop\n")
+            # print("in results loop\n")
             if args.unaligned:
                 base, qual, meta, first_ordinal, num_records = res[0]
             else:
@@ -135,27 +130,8 @@ def filtering_local(self, in_queue, args):
 
   if 'reference' not in manifest:
     raise Exception("No reference data in manifest {}. Unaligned dataset not yet supported. Please align dataset first.".format(args.dataset))
-
-  #bp_handle = persona_ops.buffer_pool(size=10, bound=False, name="buf_pool")
-  #mmap_pool = persona_ops.m_map_pool(size=10,  bound=False, name="file_mmap_buffer_pool")
   
   columns = ["base", "qual", "metadata", "results"]
-  # num_secondary = 0
-  # for column in manifest['columns']:
-  #   if 'secondary' in column:
-  #     columns.append(column)
-  #     secondary += 1
-
-  #print("BAM output using columns: {}".format(columns))
-  # TODO  provide option for reading from Ceph
-
-  # refs = []
-  # for contig in manifest['reference_contigs']:
-  #    ref_lens = contig['length']
-  #    ref_seqs = contig['name']
-  #    refs.append({'index':})
-
-
 
   result_chunks = pipeline.local_read_pipeline(upstream_tensors=[in_queue.dequeue()], columns=columns)
 
@@ -171,14 +147,10 @@ def filtering_local(self, in_queue, args):
 
   parsed_result = pipeline.join(parsed_results_list, parallel=1, capacity=8, multi=True)[0]
 
-  # base, qual, meta, result, [secondary], num_recs, first_ord, record_id
-
   handles = parsed_result[0]
   bases = handles[0]
   quals = handles[1]
   meta = handles[2]
-  # give a matrix of all the result columns
-  # results = tf.stack(handles[3:])
   results = handles[3]
   num_recs = parsed_result[1]
   first_ord = parsed_result[2]
@@ -193,54 +165,22 @@ def filtering_local(self, in_queue, args):
   bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="bufpool")
 
   chunk, num_recs, first_ord = persona_ops.agd_filtering(chunk_size=args.chunk, unaligned=args.unaligned,query=args.query,tensor_queue=q.queue_ref, bufpair_pool=bpp)
-  # chunk, num_recs, first_ord = persona_ops.agd_filtering(chunk_size=args.chunk, unaligned=args.unaligned, tensor_queue=q.queue_ref, bufpair_pool=bpp)
-  # print("in local, printing chunk :" + chunk + ". num_recs :" + tf.to_int32(num_recs) + ". and first_ordinal :" + tf.to_int64(first_ord) + ".\n")
+
   compressors = tuple(compress_pipeline(converters=[[chunk, first_ord, num_recs]], compress_parallelism=args.compress_parallel))
-  print("between\n")
+
   writers = tuple(writer_pipeline(compressors, args.write, args.name, self.outdir))
   #final = pipeline.join(upstream_tensors=writers, capacity=8, parallel=1, multi=True)[0]
 
   return writers, []
-    
-  # return [op],[]
-
-  # if args.output_path == "":
-  #   output_path = manifest['name'] + ".bam"
-  # else:
-  #   output_path = args.output_path
-
-  # ref_lens = []
-  # ref_seqs = []
-
-  # for contig in manifest['reference_contigs']:
-  #   ref_lens.append(contig['length'])
-  #   ref_seqs.append(contig['name'])
-
-  # sort = manifest['sort'] if 'sort' in manifest else 'unsorted'
-
-  # pg_id = "personaAGD" # TODO get from manifest
-  # read_group = manifest['name'] 
-  # agd_to_bam = persona_ops.agd_output_bam(results_handle=results, bases_handle=bases, 
-  #                                         qualities_handle=quals, metadata_handle=meta,
-  #                                         num_records=num_recs, path=output_path,
-  #                                         ref_sequences=ref_seqs, ref_seq_sizes=ref_lens,
-  #                                         pg_id=pg_id, read_group=read_group, sort_order=sort,
-  #                                         num_threads=args.threads)
-  
-  # return [agd_to_bam], []
-
 
 def compress_pipeline(converters, compress_parallelism):
     converted_batch = pipeline.join(converters, parallel=compress_parallelism, capacity=8, multi=True, name="compress_input")
-    print("compress\n")
     buf_pool = persona_ops.buffer_pool(size=0, bound=False, name="bufpool")
 
     for chunk, first_ord, num_recs in converted_batch:
-        print("loop comp\n")
         cols = tf.unstack(chunk)
         out = []
         for col in cols:
-            print("col loop\n")
             out.append(persona_ops.buffer_pair_compressor(buffer_pool=buf_pool, buffer_pair=col))
 
         out_stacked = tf.stack(out)
@@ -250,16 +190,13 @@ def compress_pipeline(converters, compress_parallelism):
 def writer_pipeline(compressors, write_parallelism, record_id, output_dir):
     prefix_name = tf.constant("{}_".format(record_id), name="prefix_string")
     compressed_batch = pipeline.join(compressors, parallel=write_parallelism, capacity=8, multi=True, name="write_input")
-    print("in writer\n")
     types = ['base_compact', 'text', 'text', 'structured']
     exts = ['.base', '.qual', '.metadata', '.results']
     for chunk_stacked, first_ordinal, num_recs in compressed_batch:
         chunks = tf.unstack(chunk_stacked)
         first_ord_as_string = string_ops.as_string(first_ordinal, name="first_ord_as_string")
-        print("somewhere")
         paths = []
         for i, chunk in enumerate(chunks):
-            print("chunks")
             key = string_ops.string_join([output_dir, prefix_name, first_ord_as_string, exts[i]], name="key_string")
             paths.append(persona_ops.agd_file_system_buffer_writer(record_id=record_id,
                                                        record_type=types[i],
