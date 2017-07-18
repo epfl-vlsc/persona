@@ -275,6 +275,14 @@ class LocalCommonService(SnapCommonService):
         #print(ref_seqs.decode("utf-8"))
         lens = lens.decode("utf-8").split(',')
         ref_list = []
+        #print("ref seqs")
+       # print(ref_seqs.decode("utf-8").split(','))
+        print("ref size")
+        print(len(ref_seqs.decode("utf-8").split(',')))
+      #  print("lens")
+       # print(lens)
+        print("lens size?")
+        print(len(lens))
         for i, ref in enumerate(ref_seqs.decode("utf-8").split(',')):
             ref_list.append({'name':ref, 'length':lens[i], 'index':i})
         args.dataset['reference_contigs'] = ref_list
