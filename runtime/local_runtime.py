@@ -54,8 +54,17 @@ def execute(args, modules):
     service = module.get_services()[0]
     
   run_arguments = tuple(service.extract_run_args(args=args))
+  if type(run_arguments[0]) is list:
+      in_queue = []
+      for i in range(len(run_arguments)):
+          in_queue.append(tf.train.input_producer(input_tensor=run_arguments[i], num_epochs=1, shuffle=False, capacity=len(run_arguments)))
+      service_ops, service_init_ops = service.make_graph(in_queue=in_queue,args=args)
 
-  in_queue = tf.train.input_producer(input_tensor=run_arguments, num_epochs=1, shuffle=False, capacity=len(run_arguments))
+  else:
+      in_queue = tf.train.input_producer(input_tensor=run_arguments, num_epochs=1, shuffle=False, capacity=len(run_arguments))
+
+
+  #in_queue = tf.train.input_producer(input_tensor=run_arguments, num_epochs=1, shuffle=False, capacity=len(run_arguments))
 
   # TODO currently we assume all the service_ops are the same
   service_ops, service_init_ops = service.make_graph(in_queue=in_queue,
