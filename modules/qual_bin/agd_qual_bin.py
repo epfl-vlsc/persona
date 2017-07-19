@@ -113,10 +113,10 @@ def agd_qual_bin_local(in_queue, outdir=None, parallel_parse=1, parallel_write=1
     result_buf, num_results, first_ord, record_id = parsed_result
     result_buf = tf.unstack(result_buf)[0]
     print(result_buf)
-
+	
     bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="output_buffer_pair_pool")
     result_out = persona_ops.agd_qual_bin(results_handle=result_buf, num_records=num_results, 
-            buffer_pair_pool=bpp, name="qualbinop")
+            buffer_pair_pool=bpp, name="qualbinop", upper_bounds = [9, 19, 24, 29, 34, 39,40], bin_values = [6, 15, 22, 27, 33, 37, 40] )
 
     result_to_write = pipeline.join([result_out, num_results, first_ord, record_id], parallel=parallel_write, 
         capacity=8, multi=False)
