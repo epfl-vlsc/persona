@@ -65,7 +65,7 @@ def _make_writers(compressed_batch, output_dir, write_parallelism):
     for buf, num_recs, first_ordinal, record_id in compressed_single:
     
         first_ord_as_string = string_ops.as_string(first_ordinal, name="first_ord_as_string")
-        result_key = string_ops.string_join([output_dir, "/", record_id, "_", first_ord_as_string, ".results"], name="base_key_string")
+        result_key = string_ops.string_join([output_dir, "/", record_id, "_", first_ord_as_string, ".qual"], name="base_key_string")
         
         result = persona_ops.agd_file_system_buffer_writer(record_id=record_id,
                                                      record_type="structured",
@@ -95,7 +95,7 @@ def agd_qual_bin_local(in_queue, outdir=None, parallel_parse=1, parallel_write=1
     """
   
     parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(parallel_parse))
-    result_chunks = pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=['results'])
+    result_chunks = pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=['qual'])
 
     result_chunk_list = [ list(c) for c in result_chunks ]
 
@@ -106,7 +106,7 @@ def agd_qual_bin_local(in_queue, outdir=None, parallel_parse=1, parallel_write=1
     parsed_result = pipeline.join(parsed_results_list, parallel=1, capacity=8, multi=True)[0]
 
     # result_buf, num_recs, first_ord, record_id
-    #parsed_results = tf.contrib.persona.persona_in_pipe(key=key, dataset_dir=local_directory, columns=["results"], parse_parallel=parallel_parse,
+    #parsed_results = tf.contrib.persona.persona_in_pipe(key=key, dataset_dir=local_directory, columns=["qual_test"], parse_parallel=parallel_parse,
                                                         #process_parallel=1)
   
     print(parsed_result)
@@ -116,7 +116,7 @@ def agd_qual_bin_local(in_queue, outdir=None, parallel_parse=1, parallel_write=1
 	
     bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="output_buffer_pair_pool")
     result_out = persona_ops.agd_qual_bin(results_handle=result_buf, num_records=num_results, 
-            buffer_pair_pool=bpp, name="qualbinop", upper_bounds = [9, 19, 24, 29, 34, 39,40], bin_values = [6, 15, 22, 27, 33, 37, 40] )
+            buffer_pair_pool=bpp, name="qualbinop", upper_bounds = [9, 19, 24, 29, 34, 39,40], bin_values = [6, 15, 22, 27, 33, 37, 40], encoding_offset = 33)
 
     result_to_write = pipeline.join([result_out, num_results, first_ord, record_id], parallel=parallel_write, 
         capacity=8, multi=False)
