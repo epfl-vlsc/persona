@@ -50,9 +50,9 @@ class QualBinService(Service):
         if in_queue is None:
             raise EnvironmentError("in queue is none")
 
-        dataset_dir = os.path.dirname(args.dataset_dir) 
+        #dataset_dir = os.path.dirname(args.dataset_dir) 
         op = agd_qual_bin_local(in_queue=in_queue,
-                                       outdir=dataset_dir, 
+                                       outdir=args.dataset_dir, 
                                        parallel_parse=args.parse_parallel, 
                                        parallel_write=args.write_parallel)
         run_once = []
@@ -68,7 +68,7 @@ def _make_writers(compressed_batch, output_dir, write_parallelism):
         result_key = string_ops.string_join([output_dir, "/", record_id, "_", first_ord_as_string, ".qual"], name="base_key_string")
         
         result = persona_ops.agd_file_system_buffer_writer(record_id=record_id,
-                                                     record_type="structured",
+                                                     record_type="text",
                                                      resource_handle=buf,
                                                      path=result_key,
                                                      compressed=True,
@@ -124,7 +124,7 @@ def agd_qual_bin_local(in_queue, outdir=None, parallel_parse=1, parallel_write=1
     compressed = compress_pipeline(result_to_write, parallel_compress)
 
     written = _make_writers(compressed_batch=list(compressed), output_dir=outdir, write_parallelism=parallel_write)
-
+    print(outdir)
     recs = list(written)
     all_written_keys = pipeline.join(recs, parallel=1, capacity=8, multi=False)
 
