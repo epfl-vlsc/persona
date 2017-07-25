@@ -40,13 +40,7 @@ class CalculateCoverageService(Service):
                             help="total paralellism level for reading data from disk")
 
         parser.add_argument("-i", "--dataset-dir", type=path_exists_checker(),  help="Directory containing ALL of the chunk files")
-        parser.add_argument("-scale", "--scale", default=1,type = int, help="Each coverage value is multiplied by this factor before being reported. Default is 1")
-        parser.add_argument("-max", "--max", default=-1, type = int, help="Combine all positions with a depth >= max into a single bin in the histogram")
-        parser.add_argument("-bg", "--bg", default=False, action="store_true", help="Report depth in BedGraph format")
-        parser.add_argument("-d", "--d", default=False, action="store_true", help="Report the depth at each genome position with 1-based coordinates")
-        parser.add_argument("-strand","--strand", default='B', help="Calculate coverage of intervals from a specific strand")
-        parser.add_argument("-bga" , "--bga",default=False, action="store_true", help="Report depth in BedGraph format along with zero-entries")
-        parser.add_argument("-dz", "--dz" ,default=False, action="store_true", help="Report the depth at each genome position with 0-based coordinates")
+        parser.add_argument("-feature","--feature", default='B', help="Feature name")
 
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two
@@ -64,17 +58,11 @@ class CalculateCoverageService(Service):
             raise EnvironmentError("in queue is none")
 
         dataset_dir = os.path.dirname(dataset_dir)
-        op = agd_peak_detection_local(in_queue=in_queue,
+        op = import_sga_local(in_queue=in_queue,
                                        outdir=dataset_dir,
                                        parallel_parse=args.parse_parallel,
-                                       scale=args.scale,
                                        argsj = args,
-                                       max = args.max,
-                                       bg = args.bg,
-                                       d = args.d,
-                                       strand = args.strand,
-                                       bga = args.bga,
-                                       dz = args.dz)
+                                       feature = args.feature)
         run_once = []
         return [[op]] , run_once
 
@@ -89,7 +77,7 @@ def compress_pipeline(results, compress_parallelism):
 
         yield compressed_buf, num_recs, first_ord, record_id
 
-def agd_peak_detection_local(in_queue, argsj,outdir=None, parallel_parse=1,scale=1,max=-1,bg=False,d =  False,strand = "B",bga=False,dz= False):
+def import_sga_local(in_queue, argsj,outdir=None, parallel_parse=1,feature = "NFAT"):
     manifest = argsj.dataset
     if 'reference' not in manifest:
         raise Exception("No reference data in manifest {}. Unaligned BAM not yet supported. Please align dataset first.".format(args.dataset))
@@ -125,6 +113,6 @@ def agd_peak_detection_local(in_queue, argsj,outdir=None, parallel_parse=1,scale
 
 
 
-    result = persona_ops.agd_peak_detection(results_handle=result_buf, num_records=num_results,ref_sequences=ref_seqs,ref_seq_sizes=ref_lens,scale = scale, max= max,bg = bg,d = d, strand = strand, dz = dz,bga= bga,name="peakdetectionop")
+    result = persona_ops.import_sga(results_handle=result_buf, num_records=num_results,ref_sequences=ref_seqs,ref_seq_sizes=ref_lens, feature = feature,name="importsgaop")
 
     return result

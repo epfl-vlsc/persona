@@ -1,11 +1,11 @@
-from . import agd_peak_detection
+from . import import_sga
 from ..common import service
 
 def get_tooltip():
-  return "Find peak regions in an AGD dataset."
+  return "Convert AGD dataset to SGA."
 
 class CalculateCoverageSingleton(service.ServiceSingleton):
-  class_type = agd_peak_detection.CalculateCoverageService
+  class_type = import_sga.CalculateCoverageService
 
 
 _singletons = [ CalculateCoverageSingleton() ]

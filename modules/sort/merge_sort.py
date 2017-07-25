@@ -142,16 +142,16 @@ class SortCommonService(Service):
        
         rec = dataset["records"][0]
         args.chunk = int(rec["last"]) - int(rec["first"])
-        print("Chunk size is {}".format(args.chunk))
+        #print("Chunk size is {}".format(args.chunk))
         num_file_keys = len(recs)
         if num_file_keys < args.column_grouping:
-            print("Column grouping factor too low! Setting to number of file keys ({})".format(num_file_keys))
+            #print("Column grouping factor too low! Setting to number of file keys ({})".format(num_file_keys))
             args.column_grouping = num_file_keys
 
         self.columns = dataset['columns']
         self.inter_columns = get_inter_columns(args.order_by, self.columns)
-        print("sorting with columns {}".format(self.columns))
-        print("inter columns is {}".format(self.inter_columns))
+        #print("sorting with columns {}".format(self.columns))
+        #print("inter columns is {}".format(self.inter_columns))
         return recs
 
     def add_graph_args(self, parser):
@@ -316,7 +316,7 @@ class LocalSortService(LocalCommonService):
     def make_inter_writers(self, batch, output_dir, write_parallelism):
         single = pipeline.join(batch, parallel=write_parallelism, capacity=4, multi=True, name="writer_queue")
         types = get_types_for_columns(self.inter_columns)
-        print("inter col types {}".format(types))
+        #print("inter col types {}".format(types))
         #types = [ "structured", "base_compact", "text", "text"]
       
         # no uncompressed buffer pair writer yet
@@ -348,7 +348,7 @@ class LocalSortService(LocalCommonService):
         # upstream_tensors: a list of tensor tuples of type: buffer_list_handle, record_id, first_ordinal, num_records, file_path
         #types = self.records_type_location if args.order_by == location_value else self.records_type_metadata
         types = get_record_types_for_columns(args.order_by, self.inter_columns)
-        print("final write types {}".format(types))
+        #print("final write types {}".format(types))
         writers = pipeline.local_write_pipeline(upstream_tensors=[compressed_buf], compressed=True, record_types=types, name="local_write_pipeline")
         
         return writers
@@ -358,7 +358,7 @@ class LocalSortService(LocalCommonService):
 
         # TODO remove the _out when we are satisfied it works correctly
         rec_name = args.dataset['records'][0]['path'][:-1]   # assuming path name is chunk_file_{ordinal}
-        print("Sorting {} chunks".format(len(args.dataset['records'])))
+        #print("Sorting {} chunks".format(len(args.dataset['records'])))
 
         parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(args.sort_read_parallel))
 
@@ -410,7 +410,7 @@ class LocalSortService(LocalCommonService):
         compress_queue = pipeline.join(merge_tuple, capacity=4, parallel=args.compress_parallel, multi=False, name="to_compress")
 
         compressed_bufs = list(self.make_compressors(compress_queue, buf_pool))
-        print(compressed_bufs)
+        #print(compressed_bufs)
         writers = list(list(a) for a in self.make_writers(args, compressed_bufs))
 
         return writers, []
