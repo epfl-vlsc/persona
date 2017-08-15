@@ -41,6 +41,7 @@ class CalculateCoverageService(Service):
 
         parser.add_argument("-i", "--dataset-dir", type=path_exists_checker(),  help="Directory containing ALL of the chunk files")
         parser.add_argument("-feature","--feature", default='B', help="Feature name")
+        parser.add_argument("-o", "--output", help="output directory")
 
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two
@@ -62,7 +63,8 @@ class CalculateCoverageService(Service):
                                        outdir=dataset_dir,
                                        parallel_parse=args.parse_parallel,
                                        argsj = args,
-                                       feature = args.feature)
+                                       feature = args.feature,
+				       path = args.output)
         run_once = []
         return [[op]] , run_once
 
@@ -77,7 +79,7 @@ def compress_pipeline(results, compress_parallelism):
 
         yield compressed_buf, num_recs, first_ord, record_id
 
-def import_sga_local(in_queue, argsj,outdir=None, parallel_parse=1,feature = "NFAT"):
+def import_sga_local(in_queue, argsj,outdir=None, parallel_parse=1,feature = "NFAT", path="."):
     manifest = argsj.dataset
     if 'reference' not in manifest:
         raise Exception("No reference data in manifest {}. Unaligned BAM not yet supported. Please align dataset first.".format(args.dataset))
@@ -113,6 +115,6 @@ def import_sga_local(in_queue, argsj,outdir=None, parallel_parse=1,feature = "NF
 
 
 
-    result = persona_ops.import_sga(results_handle=result_buf, num_records=num_results,ref_sequences=ref_seqs,ref_seq_sizes=ref_lens, feature = feature,name="importsgaop")
+    result = persona_ops.import_sga(results_handle=result_buf, num_records=num_results,ref_sequences=ref_seqs,ref_seq_sizes=ref_lens, feature = feature,path=path,name="importsgaop")
 
     return result
