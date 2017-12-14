@@ -6,6 +6,7 @@ import os
 import sys
 
 from runtime import local_runtime, dist_runtime, client_runtime
+from modules.common import parse
 
 def load_modules():
   module_dir = os.path.dirname(os.path.realpath(__file__))
@@ -25,6 +26,9 @@ def load_modules():
     mod = importlib.import_module(path)
     mods[d] = mod
   return mods
+
+def agd_info(args, modules):
+  parse.dump_metadata(mdata=args.dataset)
 
 def get_args(modules):
 
@@ -55,6 +59,10 @@ def get_args(modules):
         module_service.add_run_args(parser=service_parser)
         local_runtime.add_default_module_args(parser=service_parser)
     module_subparser.set_defaults(func=local_runtime.execute)
+
+  info_subparser = subparsers.add_parser("info", help="Basic information about an AGD dataset", parents=[parent_parser], conflict_handler='resolve')
+  parse.add_dataset(info_subparser)
+  info_subparser.set_defaults(func=agd_info)
 
   # TODO args and implementation for distributed execution
   dist_subparser = subparsers.add_parser("dist", help="Run a TF server and execute a service pulling from shared queues. Not normally called directly.")

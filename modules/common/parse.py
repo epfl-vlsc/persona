@@ -25,3 +25,33 @@ def add_dataset(parser):
                 raise
 
     parser.add_argument("dataset", type=dataset_parser, help="The AGD json metadata file describing the dataset")
+
+def dump_metadata(mdata):
+    if 'name' in mdata:
+        print("AGD Dataset: {}".format(mdata['name']))
+        print("AGD version: {}".format(mdata['version']))
+    if 'columns' in mdata:
+        print("Columns present:")
+        for c in mdata['columns']:
+            print(c)
+    else:
+        print("No columns found, your dataset may be corrupted?")
+    if 'records' in mdata:
+        recs = mdata['records']
+        print("{} chunks, {} files in total.".format(len(recs), len(mdata['columns'])*len(recs)))
+        chunk_size = recs[0]['last']
+        print("Chunk size: {}".format(chunk_size))
+        num_rows = chunk_size*(len(recs) - 1)
+        num_rows += recs[-1]['last'] - recs[-1]['first']
+        print("Total records: {}".format(num_rows))
+
+    if 'sort' in mdata:
+        print("Sort order: {}".format(mdata['sort']))
+    
+    if 'reference' in mdata:
+        print("Aligned to reference: {}".format(mdata['reference']))
+
+
+
+   
+
