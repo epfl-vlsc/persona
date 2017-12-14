@@ -36,7 +36,7 @@ def mkdir_p(path):
             raise(exc)
 
 class ImportFastaService(Service):
-   
+  
     #default inputs
     def get_shortname(self):
         return "import_fasta"
@@ -80,7 +80,10 @@ class ImportFastaService(Service):
         if args.dna and args.protein:
             raise Exception("FASTA files cannot contain both protein and DNA/RNA sequences.")
         if args.protein:
+            self.suffix = "prot"
             args.dna = False;
+        else:
+            self.suffix = "base"
 
         self.outdir = os.path.abspath(args.out) + '/'
         mkdir_p(self.outdir)
@@ -92,7 +95,7 @@ class ImportFastaService(Service):
 
         self.output_records = []
         self.output_metadata = {
-            "name": args.name, "version": 1, "records": self.output_records, "columns": ['base', 'metadata']
+            "name": args.name, "version": 1, "records": self.output_records, "columns": [self.suffix, 'metadata']
         }
 
         reader = read_pipeline(fasta_file=files, args=args)
@@ -101,7 +104,7 @@ class ImportFastaService(Service):
 
         compressors = tuple(compress_pipeline(converters=converters, compress_parallelism=args.compress_parallel))
 
-        writers = tuple(writer_pipeline(compressors, args.write, args.name, self.outdir))
+        writers = tuple(writer_pipeline(compressors, args.write, args.name, self.outdir, self.suffix, args))
         #final = pipeline.join(upstream_tensors=writers, capacity=8, parallel=1, multi=True)[0]
 
         return writers, []
@@ -152,16 +155,16 @@ def compress_pipeline(converters, compress_parallelism):
         yield base_buf, meta_buf, first_ord, num_recs
 
 
-def writer_pipeline(compressors, write_parallelism, record_id, output_dir):
+def writer_pipeline(compressors, write_parallelism, record_id, output_dir, suffix, args):
     prefix_name = tf.constant("{}_".format(record_id), name="prefix_string")
     compressed_batch = pipeline.join(compressors, parallel=write_parallelism, capacity=8, multi=True, name="write_input")
 
     for base, meta, first_ordinal, num_recs in compressed_batch:
         first_ord_as_string = string_ops.as_string(first_ordinal, name="first_ord_as_string")
-        base_key = string_ops.string_join([output_dir, prefix_name, first_ord_as_string, ".base"], name="base_key_string")
+        base_key = string_ops.string_join([output_dir, prefix_name, first_ord_as_string, ".", suffix], name="base_key_string")
         meta_key = string_ops.string_join([output_dir, prefix_name, first_ord_as_string, ".metadata"], name="metadata_key_string")
         base_path = persona_ops.agd_file_system_buffer_writer(record_id=record_id,
-                                                     record_type="base_compact",
+                                                     record_type= "text" if args.protein else "base_compact",
                                                      resource_handle=base,
                                                      path=base_key,
                                                      compressed=True,
