@@ -52,7 +52,7 @@ class ImportFastaService(Service):
         parser.add_argument("-o", "--out", default=".", help="directory to write the final record to")
         parser.add_argument("-w", "--write", default=2, type=numeric_min_checker(1, "write parallelism"), help="number of parallel writers")
         parser.add_argument("--compress-parallel", default=10, type=numeric_min_checker(1, "compress parallelism"), help="number of parallel compression pipelines")
-        parser.add_argument("fasta_file", help="the fasta file to convert")
+        parser.add_argument("fasta_file", help="The fasta file to convert. Can be used to import protein sequences, or reference genomes. Currently supports only single fasta files, so cat multi file DBs together.")
 
     def add_run_args(self, parser):
         pass
@@ -81,8 +81,9 @@ class ImportFastaService(Service):
             raise Exception("FASTA files cannot contain both protein and DNA/RNA sequences.")
         if args.protein:
             self.suffix = "prot"
-            args.dna = False;
+            args.dna = False
         else:
+            args.dna = True
             self.suffix = "base"
 
         self.outdir = os.path.abspath(args.out) + '/'
