@@ -98,7 +98,7 @@ class ProteinClusterService(Service):
 
         for i in range(num_nodes):
             op, nb, nbo, cto = self.make_ring_node(args, input_queue, envs, i, shapes, types)
-            ops.append(op)
+            ops.append([op])
             cluster_tensors_out.append(cto)
             if i == 0:
                 left_queue = nb
@@ -116,7 +116,9 @@ class ProteinClusterService(Service):
         cluster_tensor_out = pipeline.join([ [x] for x in cluster_tensors_out], parallel=1, capacity=32, multi=True)
 
         #ops.append(cluster_tensor_out)
-        return [ops, cluster_tensor_out]
+        print(ops)
+        print(cluster_tensor_out)
+        return ops + [cluster_tensor_out]
 
     def make_ring_node(self, args, input_queue, envs, node_id, shapes, types):
         # output (op, neighbor_queue, neighbor_queue_out, cluster_tensor_out)
@@ -135,7 +137,8 @@ class ProteinClusterService(Service):
         
         op = persona_ops.agd_protein_cluster(input_queue=input_queue.queue_ref, neighbor_queue=nb_q.queue_ref, neighbor_queue_out=nb_q_o.queue_ref, 
                 cluster_queue=c_q.queue_ref, alignment_envs=envs, node_id=node_id, ring_size=args.nodes, min_score=args.config["min_score"],
-                max_reps=args.config["max_reps"], max_n_aa_not_covered=args.config["max_n_aa_not_covered"], total_chunks=self.total_chunks, name="protclustop")
+                max_reps=args.config["max_reps"], max_n_aa_not_covered=args.config["max_n_aa_not_covered"], total_chunks=self.total_chunks, 
+                chunk_size=self.chunk_size, name="protclustop")
 
         return (op, nb_q, nb_q_o, cluster_tensor_out)
 
