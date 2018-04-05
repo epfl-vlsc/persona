@@ -94,7 +94,7 @@ def agd_base_compression_local(in_queue,parallel_parse=1):
     """
 
     parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(parallel_parse))
-    result_chunks = pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=['results'])
+    result_chunks = pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=['results','base'])
 
     result_chunk_list = [ list(c) for c in result_chunks ]
 
@@ -110,10 +110,11 @@ def agd_base_compression_local(in_queue,parallel_parse=1):
 
     print(parsed_result)
     result_buf, num_results, first_ord, record_id = parsed_result
-    result_buf = tf.unstack(result_buf)[0]
+    result_buf,record_buf = tf.unstack(result_buf)
     print(result_buf)
 
-    result_out = persona_ops.agd_base_compression(unpack=True,results=result_buf,chunk_size=num_results)
+    bpp = persona_ops.buffer_pair_pool(size=0, bound= False, name="output_buffer_pair_pool")
+    result_out = persona_ops.agd_base_compression(unpack=True,results=result_buf,records=record_buf,chunk_size=num_results,buffer_pair_pool=bpp)
 
     #print the result_out directly
 
