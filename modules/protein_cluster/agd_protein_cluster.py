@@ -28,11 +28,12 @@ class ProteinClusterService(Service):
     def output_shapes(self, args):
         return []
     
-    #def input_dtypes(self, args):
-        #return [tf.string, tf.int32]
+    def input_dtypes(self, args):
+        # the path to the chunk, and how many prots are in that genome
+        return [tf.string, tf.int32]
 
-    #def input_shapes(self, args):
-        #return [tf.TensorShape([]), tf.TensorShape([])]
+    def input_shapes(self, args):
+        return [tf.TensorShape([]), tf.TensorShape([])]
     
     def extract_run_args(self, args):
         if len(args.datasets) != len(set(args.datasets)):
@@ -43,14 +44,20 @@ class ProteinClusterService(Service):
         self.total_chunks = 0
         print("chunk size is {}".format(self.chunk_size))
         paths = []
+        num_seqs = []
         for t in datasets:
             if t[1]["records"][0]["last"] - t[1]["records"][0]["first"] != self.chunk_size:
                 raise ArgumentTypeError("Datasets do not have equal chunk sizes")
+            total_seqs = 0
             for p in t[1]["records"]:
                 paths.append(os.path.join(t[0], p["path"]))
                 self.total_chunks += 1
+                total_seqs += p["last"] - p["first"]
 
-        return paths
+            for x in t[1]["records"]:
+                num_seqs.append(total_seqs)
+
+        return [paths, num_seqs]
 
     def add_run_args(self, parser):
         def dataset_parser(filename):
@@ -152,13 +159,20 @@ class ProteinClusterService(Service):
         """
       
         parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(parallel_parse))
-        result_chunks = pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=['prot'])
+        keys = [ x[0] for x in parallel_key_dequeue ]
+        print("key is {}".format(keys))
+        total_recs = [ x[1] for x in parallel_key_dequeue ]
+        result_chunks = pipeline.local_read_pipeline(upstream_tensors=keys, columns=['prot'])
 
         result_chunk_list = [ list(c) for c in result_chunks ]
 
         
         parsed_results = pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=result_chunk_list)
-        parsed_results_list = list(parsed_results)
+        #print("parsed result is {}".format(parsed_results))
+        parsed_results_list = [ list(x)  for x in parsed_results ]
+        for i, x in enumerate(parsed_results_list):
+          x.append(total_recs[i])
+        #print("parsed result list is {}".format(parsed_results_list))
 
         parsed_result = pipeline.join(parsed_results_list, parallel=1, capacity=8, multi=True)[0]
 
@@ -167,14 +181,15 @@ class ProteinClusterService(Service):
                                                             #process_parallel=1)
       
         print(parsed_result)
-        result_buf, num_recs, first_ord, record_id = parsed_result
+        result_buf, num_recs, first_ord, record_id, total_recs = parsed_result
         result_buf = tf.unstack(result_buf)[0]
         print(result_buf)
 
         protein_tensor = persona_ops.agd_chunk_to_tensor(result_buf)
-        # form main input queue with protein_tensor, num_recs, sequence, was_added, coverages
-        shapes = [protein_tensor.shape, num_recs.shape, tf.TensorShape([]), tf.TensorShape([self.chunk_size]), tf.TensorShape([self.chunk_size])]
-        types = [protein_tensor.dtype.base_dtype, num_recs.dtype, tf.int32, tf.bool, tf.string]
+        # form main input queue with protein_tensor, num_recs, sequence, was_added, coverages, record_id (genome_name), first_ord
+        shapes = [protein_tensor.shape, num_recs.shape, tf.TensorShape([]), tf.TensorShape([self.chunk_size]), tf.TensorShape([self.chunk_size]), 
+            tf.TensorShape([]), first_ord.shape, total_recs.shape]
+        types = [protein_tensor.dtype.base_dtype, num_recs.dtype, tf.int32, tf.bool, tf.string, tf.string, first_ord.dtype, total_recs.dtype]
         q = data_flow_ops.FIFOQueue(capacity=2,  # TODO capacity
                 dtypes=types,
                 shapes=shapes)
@@ -183,7 +198,7 @@ class ProteinClusterService(Service):
         seq = tf.constant(0)
         was_added = tf.constant([ False for x in range(self.chunk_size)])
         coverages = tf.constant([ "" for x in range(self.chunk_size)])
-        enq = q.enqueue([protein_tensor, num_recs, seq, was_added, coverages])
+        enq = q.enqueue([protein_tensor, num_recs, seq, was_added, coverages, record_id, first_ord])
             
         tf.train.queue_runner.add_queue_runner(tf.train.queue_runner.QueueRunner(q, [enq]))
 
