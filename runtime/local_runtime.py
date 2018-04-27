@@ -71,7 +71,8 @@ def execute(args, modules):
     
   run_arguments = tuple(service.extract_run_args(args=args))
 
-  if isinstance(run_arguments, list) and isinstance(run_arguments[0], list):
+  if len(run_arguments) > 0 and isinstance(run_arguments[0], list):
+    print("creating input queue")
     in_queue = create_input_queue(run_arguments, service.input_dtypes(args), service.input_shapes(args))
   else:
     in_queue = tf.train.input_producer(input_tensor=run_arguments, num_epochs=1, shuffle=False, capacity=len(run_arguments))

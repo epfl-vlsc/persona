@@ -4,12 +4,15 @@ from __future__ import print_function
 
 import os
 import json
+import resource
 from tensorflow.python.ops import data_flow_ops, string_ops
 from argparse import ArgumentTypeError
 from . import environments
+import shutil
 
 from ..common.service import Service
-from common.parse import numeric_min_checker, path_exists_checker
+from common.parse import numeric_min_checker, path_exists_checker, yes_or_no
+import glob
 
 import tensorflow as tf
 
@@ -75,13 +78,21 @@ class ProteinClusterService(Service):
                             type=numeric_min_checker(minimum=1, message="number of writers min"))
         parser.add_argument("-n", "--nodes", default=1, help="number of ring nodes",
                             type=numeric_min_checker(minimum=1, message="number of nodes min"))
+        parser.add_argument("-l", "--cluster-length", default=100, help="Dim 0 size of cluster tensors",
+                            type=numeric_min_checker(minimum=1, message="Dim 0 size of cluster tensors must be > 0"))
         
         parser.add_argument("-c", "--config", default="./params.json", help="JSON config file")
+        parser.add_argument("-o", "--output-dir", default="matches_out", help="output file dir")
 
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two 
         things: a list of tensors which the runtime will 
         evaluate, and a list of run-once ops"""
+
+        print("setting rlimit")
+        # required to avoid stack overflows caused by alignment functions
+        # that stack allocate big arrays
+        resource.setrlimit(resource.RLIMIT_STACK, (65532000, 65532000))
         # make the graph
         args.config = json.load(open(args.config))
 
@@ -92,7 +103,7 @@ class ProteinClusterService(Service):
         run_once = []
         print(ops)
         print(os.getpid())
-        import ipdb; ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         return ops, run_once 
 
     def make_ring(self, args, num_nodes, input_queue, envs, shapes, types):
@@ -120,12 +131,25 @@ class ProteinClusterService(Service):
                 enq = left_queue.enqueue(nbo.dequeue())
                 tf.train.queue_runner.add_queue_runner(tf.train.queue_runner.QueueRunner(left_queue, [enq]))
 
-        cluster_tensor_out = pipeline.join([ [x] for x in cluster_tensors_out], parallel=1, capacity=32, multi=True)
+        print(cluster_tensors_out)
+        match_ints, match_doubles, genomes = pipeline.join([ x for x in cluster_tensors_out], parallel=1, capacity=32, multi=True)[0]
+
+        if os.path.exists(args.output_dir):
+            if not yes_or_no("This output dir exists. Overwrite?"):
+                sys.exit(0)
+            else:
+                for f in glob.glob(args.output_dir + "/*"):
+                    shutil.rmtree(f)
+        else:
+            os.mkdir(args.output_dir)
+
+        agg = persona_ops.agd_cluster_aggregate(match_ints=match_ints, match_doubles=match_doubles, 
+            genomes=genomes, output_dir=args.output_dir)
 
         #ops.append(cluster_tensor_out)
         print(ops)
-        print(cluster_tensor_out)
-        return ops + [cluster_tensor_out]
+        print(agg)
+        return ops + [[agg]]
 
     def make_ring_node(self, args, input_queue, envs, node_id, shapes, types):
         # output (op, neighbor_queue, neighbor_queue_out, cluster_tensor_out)
@@ -136,16 +160,20 @@ class ProteinClusterService(Service):
         nb_q_o = data_flow_ops.FIFOQueue(capacity=2,  # TODO capacity
                 dtypes=types,
                 shapes=shapes, name="nbo_"+str(node_id))
-        
-        c_q = data_flow_ops.FIFOQueue(capacity=2,  # TODO capacity
-                dtypes=[tf.string], shapes=[tf.TensorShape([])])
+       
+        s = args.cluster_length
+        c_q = data_flow_ops.FIFOQueue(capacity=10,  # TODO capacity
+                dtypes=[tf.int32, tf.float64, tf.string], 
+                shapes=[tf.TensorShape([s, 6]), tf.TensorShape([s, 3]), tf.TensorShape([s, 2])])
 
         cluster_tensor_out = c_q.dequeue()
-        
+       
+        should_seed = True #if node_id == 0 else False
+
         op = persona_ops.agd_protein_cluster(input_queue=input_queue.queue_ref, neighbor_queue=nb_q.queue_ref, neighbor_queue_out=nb_q_o.queue_ref, 
                 cluster_queue=c_q.queue_ref, alignment_envs=envs, node_id=node_id, ring_size=args.nodes, min_score=args.config["min_score"],
                 max_reps=args.config["max_reps"], max_n_aa_not_covered=args.config["max_n_aa_not_covered"], total_chunks=self.total_chunks, 
-                chunk_size=self.chunk_size, name="protclustop")
+                chunk_size=self.chunk_size, should_seed=should_seed, cluster_length=args.cluster_length, name="protclustop")
 
         return (op, nb_q, nb_q_o, cluster_tensor_out)
 
@@ -198,7 +226,7 @@ class ProteinClusterService(Service):
         seq = tf.constant(0)
         was_added = tf.constant([ False for x in range(self.chunk_size)])
         coverages = tf.constant([ "" for x in range(self.chunk_size)])
-        enq = q.enqueue([protein_tensor, num_recs, seq, was_added, coverages, record_id, first_ord])
+        enq = q.enqueue([protein_tensor, num_recs, seq, was_added, coverages, record_id, first_ord, total_recs])
             
         tf.train.queue_runner.add_queue_runner(tf.train.queue_runner.QueueRunner(q, [enq]))
 
