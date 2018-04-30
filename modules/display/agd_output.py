@@ -7,7 +7,7 @@ from ..common.parse import *
 persona_ops = tf.contrib.persona.persona_ops()
 
 class DisplayService(Service):
-   
+
     #default inputs
     def get_shortname(self):
         return "display"
@@ -28,13 +28,13 @@ class DisplayService(Service):
         return []
 
     def extract_run_args(self, args):
-        # doesnt really have any effect, since display just runs once 
-        
+        # doesnt really have any effect, since display just runs once
+
         return []
 
     def make_graph(self, in_queue, args):
-        """ Make the graph for this service. Returns two 
-        things: a list of tensors which the runtime will 
+        """ Make the graph for this service. Returns two
+        things: a list of tensors which the runtime will
         evaluate, and a list of run-once ops"""
         # make the graph
 
@@ -45,6 +45,8 @@ class DisplayService(Service):
 def run(args):
 
   dataset_params = args.dataset
+  # print("dataset param = ")
+  # print(dataset_params)
   records = dataset_params['records']
   first_record = records[0]
   chunk_size = first_record["last"] - first_record["first"]
@@ -65,4 +67,3 @@ def run(args):
       start=start, finish=finish, columns=columns)
 
   return [output]
-

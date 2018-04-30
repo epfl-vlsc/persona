@@ -3,10 +3,12 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import json
 from tensorflow.python.ops import data_flow_ops, string_ops
 
 from ..common.service import Service
 from common.parse import numeric_min_checker, path_exists_checker
+from ..common import parse
 
 import tensorflow as tf
 
@@ -37,6 +39,8 @@ class AGDBaseCompressionService(Service):
         parser.add_argument("-w", "--write-parallel", default=1, help="number of writers to use",
                             type=numeric_min_checker(minimum=1, message="number of writers min"))
         parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), required=True, help="Directory containing ALL of the chunk files")
+        parser.add_argument("-c", "--compress-parallel", default=1, help="number of compressor",
+                            type=numeric_min_checker(minimum=1, message="number of compressor min"))
 
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two
@@ -49,10 +53,29 @@ class AGDBaseCompressionService(Service):
         if in_queue is None:
             raise EnvironmentError("in queue is none")
 
-        dataset_dir = os.path.dirname(args.dataset_dir)
+        # print("args qui est obtenue ")
+        # print(args.dataset_dir)
+        dataset_dir = args.dataset_dir
+        # dataset_dir = os.path.dirname(args.dataset_dir)
+        # print("dataset_dir = :")
+        # print(dataset_dir)
+        # op = agd_base_compression_local(in_queue=in_queue,
+        #                                parallel_parse=args.parse_parallel)
 
         op = agd_base_compression_local(in_queue=in_queue,
-                                       parallel_parse=args.parse_parallel)
+                                       outdir=dataset_dir,
+                                       parallel_parse=args.parse_parallel,
+                                       parallel_write=args.write_parallel,
+                                       parallel_compress = args.compress_parallel)
+
+        columns = args.dataset['columns']
+        if "refcompress" not in columns:
+            columns.append('refcompress')
+            args.dataset['columns'] = columns
+        with open(args.dataset[parse.filepath_key], 'w+') as f:
+            args.dataset.pop(parse.filepath_key,None)
+            json.dump(args.dataset, f, indent=4)
+
         run_once = []
         return [[op]], run_once
 
@@ -62,11 +85,19 @@ def _make_writers(compressed_batch, output_dir, write_parallelism):
 
     for buf, num_recs, first_ordinal, record_id in compressed_single:
 
-        first_ord_as_string = string_ops.as_string(first_ordinal, name="first_ord_as_string")
-        result_key = string_ops.string_join([output_dir, "/", record_id, "_", first_ord_as_string, ".results"], name="base_key_string")
+        # print("on check les paths : ")
+        # print(first_ordinal)
+        # print(output_dir)
+        # print(record_id)
 
+        first_ord_as_string = string_ops.as_string(first_ordinal, name="first_ord_as_string")
+        # print("first_ord_as_string : ")
+        # print(first_ord_as_string)
+        result_key = string_ops.string_join([output_dir, "/", record_id, "_", first_ord_as_string, ".refcompress"], name="base_key_string")
+        # print("le path ou on doit faire la sauvegarde est : ")
+        # print(result_key)
         result = persona_ops.agd_file_system_buffer_writer(record_id=record_id,
-                                                     record_type="structured",
+                                                     record_type="text",
                                                      resource_handle=buf,
                                                      path=result_key,
                                                      compressed=True,
@@ -84,8 +115,9 @@ def compress_pipeline(results, compress_parallelism):
 
         yield compressed_buf, num_recs, first_ord, record_id
 
+
 # def agd_base_compression_local(in_queue, outdir=None, parallel_parse=1, parallel_write=1, parallel_compress=1):
-def agd_base_compression_local(in_queue,parallel_parse=1):
+def agd_base_compression_local(in_queue,outdir=None,parallel_parse=1,parallel_write=1,parallel_compress=1):
     """
     key: tensor with chunk key string
     local_directory: the "base path" from which these should be read
@@ -107,25 +139,27 @@ def agd_base_compression_local(in_queue,parallel_parse=1):
     # result_buf, num_recs, first_ord, record_id
     #parsed_results = tf.contrib.persona.persona_in_pipe(key=key, dataset_dir=local_directory, columns=["results"], parse_parallel=parallel_parse,
                                                         #process_parallel=1)
-
-    print(parsed_result)
+    # print("here is the parsed_result")
+    # print(parsed_result)
     result_buf, num_results, first_ord, record_id = parsed_result
     result_buf,record_buf = tf.unstack(result_buf)
-    print(result_buf)
+    # print("here is the result buf")
+    # print(result_buf)
 
     bpp = persona_ops.buffer_pair_pool(size=0, bound= False, name="output_buffer_pair_pool")
-    result_out = persona_ops.agd_base_compression(unpack=True,results=result_buf,records=record_buf,chunk_size=num_results,buffer_pair_pool=bpp)
+    result_out = persona_ops.agd_base_compression(unpack=True,results=result_buf,
+        records=record_buf,chunk_size=num_results,buffer_pair_pool=bpp)
+    # print("here is the result out :")
+    # print(result_out)
 
-    #print the result_out directly
+    result_to_write = pipeline.join([result_out, num_results, first_ord, record_id], parallel=parallel_write,
+        capacity=8, multi=False)
 
-    # result_to_write = pipeline.join([result_out, num_results, first_ord, record_id], parallel=parallel_write,
-    #     capacity=8, multi=False)
-    #
-    # compressed = compress_pipeline(result_to_write, parallel_compress)
-    #
-    # written = _make_writers(compressed_batch=list(compressed), output_dir=outdir, write_parallelism=parallel_write)
-    #
-    # recs = list(written)
-    # all_written_keys = pipeline.join(recs, parallel=1, capacity=8, multi=False)›
+    compressed = compress_pipeline(result_to_write, parallel_compress)
 
-    return result_out #all_written_keys
+    written = _make_writers(compressed_batch=list(compressed), output_dir=outdir, write_parallelism=parallel_write)
+
+    recs = list(written)
+    all_written_keys = pipeline.join(recs, parallel=1, capacity=8, multi=False)
+
+    return all_written_keys
