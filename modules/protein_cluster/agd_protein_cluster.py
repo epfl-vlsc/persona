@@ -110,7 +110,7 @@ class ProteinClusterService(Service):
         #import ipdb; ipdb.set_trace()
         return ops, run_once 
 
-    def make_ring(self, args, num_nodes, input_queue, envs, shapes, types):
+    def make_ring(self, args, num_nodes, input_queue, envs, shapes, types, candidate_map, executor):
 
         left_queue = None
         ops = []
@@ -119,7 +119,7 @@ class ProteinClusterService(Service):
         prev_nb_queue = None
 
         for i in range(num_nodes):
-            op, nb, nbo, cto = self.make_ring_node(args, input_queue, envs, i, shapes, types)
+            op, nb, nbo, cto = self.make_ring_node(args, input_queue, envs, i, shapes, types, candidate_map, executor)
             ops.append([op])
             cluster_tensors_out.append(cto)
             if i == 0:
@@ -155,18 +155,18 @@ class ProteinClusterService(Service):
         print(agg)
         return ops + [[agg]]
 
-    def make_ring_node(self, args, input_queue, envs, node_id, shapes, types):
+    def make_ring_node(self, args, input_queue, envs, node_id, shapes, types, candidate_map, executor):
         # output (op, neighbor_queue, neighbor_queue_out, cluster_tensor_out)
-        nb_q = data_flow_ops.FIFOQueue(capacity=2,  # TODO capacity
+        nb_q = data_flow_ops.FIFOQueue(capacity=20,  # TODO capacity
                 dtypes=types,
                 shapes=shapes, name="nb_"+str(node_id))
 
-        nb_q_o = data_flow_ops.FIFOQueue(capacity=2,  # TODO capacity
+        nb_q_o = data_flow_ops.FIFOQueue(capacity=20,  # TODO capacity
                 dtypes=types,
                 shapes=shapes, name="nbo_"+str(node_id))
        
         s = args.cluster_length
-        c_q = data_flow_ops.FIFOQueue(capacity=10,  # TODO capacity
+        c_q = data_flow_ops.FIFOQueue(capacity=30,  # TODO capacity
                 dtypes=[tf.int32, tf.float64, tf.string], 
                 shapes=[tf.TensorShape([s, 6]), tf.TensorShape([s, 3]), tf.TensorShape([s, 2])])
 
@@ -176,8 +176,9 @@ class ProteinClusterService(Service):
 
         op = persona_ops.agd_protein_cluster(input_queue=input_queue.queue_ref, neighbor_queue=nb_q.queue_ref, neighbor_queue_out=nb_q_o.queue_ref, 
                 cluster_queue=c_q.queue_ref, alignment_envs=envs, node_id=node_id, ring_size=args.nodes, min_score=args.config["min_score"],
-                max_reps=args.config["max_reps"], max_n_aa_not_covered=args.config["max_n_aa_not_covered"], total_chunks=self.total_chunks, 
-                chunk_size=self.chunk_size, should_seed=should_seed, cluster_length=args.cluster_length, name="protclustop")
+                max_reps=args.config["max_reps"], max_n_aa_not_covered=args.config["max_n_aa_not_covered"], subsequence_homology=args.config["subsequence_homology"], 
+                total_chunks=self.total_chunks, chunk_size=self.chunk_size, should_seed=should_seed, cluster_length=args.cluster_length, 
+                candidate_map=candidate_map, executor=executor, name="protclustop")
 
         return (op, nb_q, nb_q_o, cluster_tensor_out)
 
@@ -238,7 +239,9 @@ class ProteinClusterService(Service):
 
         envs = environments.make_envs_op() 
 
-        all_ops = self.make_ring(args, args.nodes, q, envs, shapes, types)
+        candidate_map = persona_ops.candidate_map()
+        executor = persona_ops.alignment_executor(num_threads=47, capacity=100)
+        all_ops = self.make_ring(args, args.nodes, q, envs, shapes, types, candidate_map, executor)
 
         #result_to_write = pipeline.join([result_out, num_results, first_ord, record_id], parallel=parallel_write, 
             #capacity=8, multi=False)
