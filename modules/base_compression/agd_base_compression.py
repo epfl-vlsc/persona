@@ -11,6 +11,7 @@ from common.parse import numeric_min_checker, path_exists_checker
 from ..common import parse
 
 import tensorflow as tf
+import ipdb;
 
 persona_ops = tf.contrib.persona.persona_ops()
 from tensorflow.contrib.persona import queues, pipeline
@@ -29,7 +30,7 @@ class AGDBaseCompressionService(Service):
     def extract_run_args(self, args):
         dataset = args.dataset
         paths = [ a["path"] for a in dataset["records"] ]
-        print(paths)
+        #print(paths)
         dataset_dir = args.dataset_dir
         return (os.path.join(dataset_dir, a) for a in paths)
 
@@ -61,13 +62,13 @@ class AGDBaseCompressionService(Service):
         # print(dataset_dir)
         # op = agd_base_compression_local(in_queue=in_queue,
         #                                parallel_parse=args.parse_parallel)
-
         op = agd_base_compression_local(in_queue=in_queue,
                                        outdir=dataset_dir,
                                        parallel_parse=args.parse_parallel,
                                        parallel_write=args.write_parallel,
                                        parallel_compress = args.compress_parallel)
-
+        #pid = os.getpid()
+        #print("pid is = ", pid)
         columns = args.dataset['columns']
         if "refcompress" not in columns:
             columns.append('refcompress')
@@ -75,27 +76,19 @@ class AGDBaseCompressionService(Service):
         with open(args.dataset[parse.filepath_key], 'w+') as f:
             args.dataset.pop(parse.filepath_key,None)
             json.dump(args.dataset, f, indent=4)
+            #f.close()
 
         run_once = []
         return [[op]], run_once
 
 def _make_writers(compressed_batch, output_dir, write_parallelism):
 
-    compressed_single = pipeline.join(compressed_batch, parallel=write_parallelism, capacity=8, multi=True)
+    compressed_single = pipeline.join(compressed_batch, parallel=write_parallelism, capacity=8, multi=True, name="make_writers_join")
 
     for buf, num_recs, first_ordinal, record_id in compressed_single:
 
-        # print("on check les paths : ")
-        # print(first_ordinal)
-        # print(output_dir)
-        # print(record_id)
-
         first_ord_as_string = string_ops.as_string(first_ordinal, name="first_ord_as_string")
-        # print("first_ord_as_string : ")
-        # print(first_ord_as_string)
         result_key = string_ops.string_join([output_dir, "/", record_id, "_", first_ord_as_string, ".refcompress"], name="base_key_string")
-        # print("le path ou on doit faire la sauvegarde est : ")
-        # print(result_key)
         result = persona_ops.agd_file_system_buffer_writer(record_id=record_id,
                                                      record_type="text",
                                                      resource_handle=buf,
@@ -103,7 +96,6 @@ def _make_writers(compressed_batch, output_dir, write_parallelism):
                                                      compressed=True,
                                                      first_ordinal=first_ordinal,
                                                      num_records=tf.to_int32(num_recs))
-
         yield result # writes out the file path key (full path)
 
 def compress_pipeline(results, compress_parallelism):
@@ -134,7 +126,7 @@ def agd_base_compression_local(in_queue,outdir=None,parallel_parse=1,parallel_wr
     parsed_results = pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=result_chunk_list)
     parsed_results_list = list(parsed_results)
 
-    parsed_result = pipeline.join(parsed_results_list, parallel=1, capacity=8, multi=True)[0]
+    parsed_result = pipeline.join(parsed_results_list, parallel=1, capacity=8, multi=True, name="parsed_result_join")[0]
 
     # result_buf, num_recs, first_ord, record_id
     #parsed_results = tf.contrib.persona.persona_in_pipe(key=key, dataset_dir=local_directory, columns=["results"], parse_parallel=parallel_parse,
@@ -145,21 +137,18 @@ def agd_base_compression_local(in_queue,outdir=None,parallel_parse=1,parallel_wr
     result_buf,record_buf = tf.unstack(result_buf)
     # print("here is the result buf")
     # print(result_buf)
+    # il faut que je mettre le break point ici pour pouvoir avancé plus vite dans la computation
 
     bpp = persona_ops.buffer_pair_pool(size=0, bound= False, name="output_buffer_pair_pool")
     result_out = persona_ops.agd_base_compression(unpack=True,results=result_buf,
         records=record_buf,chunk_size=num_results,buffer_pair_pool=bpp)
     # print("here is the result out :")
     # print(result_out)
-
     result_to_write = pipeline.join([result_out, num_results, first_ord, record_id], parallel=parallel_write,
-        capacity=8, multi=False)
-
+        capacity=8, multi=False, name="result_to_write_join")
     compressed = compress_pipeline(result_to_write, parallel_compress)
-
     written = _make_writers(compressed_batch=list(compressed), output_dir=outdir, write_parallelism=parallel_write)
-
     recs = list(written)
-    all_written_keys = pipeline.join(recs, parallel=1, capacity=8, multi=False)
+    all_written_keys = pipeline.join(recs, parallel=1, capacity=8, multi=False, name="all_written_keys_join")
 
     return all_written_keys
