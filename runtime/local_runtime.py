@@ -1,6 +1,7 @@
 import os
 import tensorflow as tf
 import shutil
+import time
 from tensorflow.contrib.persona import pipeline
 from tensorflow.python.ops import data_flow_ops, string_ops
 from common import parse
@@ -114,6 +115,7 @@ def execute(args, modules):
           #sess.run(service_init_ops)
 
       # its possible the service is a simple run once
+      t0 = time.time()
       if len(service_ops) > 0:
           with contextlib.ExitStack() as stack:
               if record_stats:
@@ -139,6 +141,9 @@ def execute(args, modules):
               coord.join(threads, stop_grace_period_secs=10)
 
           service.on_finish(args, results)
+
+  runtime = time.time() - t0
+  print("Local executor runtime: {:.3f}".format(runtime))
   if summary:
       summary_writer.flush(); summary_writer.close()
   if record_stats:
