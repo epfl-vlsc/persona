@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+from tensorflow.contrib.persona import pipeline
 
 import os
 import json
@@ -11,26 +12,27 @@ from . import environments
 import shutil
 
 from ..common.service import Service
-from common.parse import numeric_min_checker, path_exists_checker, yes_or_no
+from common.parse import numeric_min_checker, yes_or_no
 import glob
 
 import tensorflow as tf
 
 persona_ops = tf.contrib.persona.persona_ops()
-from tensorflow.contrib.persona import queues, pipeline
+
 
 class ProteinClusterService(Service):
+
     """ A class representing a service module in Persona """
-   
-    #default inputs
+    # default inputs
     def get_shortname(self):
         return "protcluster"
 
     def output_dtypes(self, args):
         return []
+
     def output_shapes(self, args):
         return []
-    
+
     def input_dtypes(self, args):
         # the path to the chunk, and how many prots are in that genome
         # and abs seq of each chunk
@@ -38,12 +40,12 @@ class ProteinClusterService(Service):
 
     def input_shapes(self, args):
         return [tf.TensorShape([]), tf.TensorShape([]), tf.TensorShape([])]
-    
+
     def extract_run_args(self, args):
         if len(args.datasets) != len(set(args.datasets)):
             raise ArgumentTypeError("Duplicate datasets on command line!")
 
-        datasets = [ (os.path.dirname(x), json.load(open(x))) for x in args.datasets ]
+        datasets = [(os.path.dirname(x), json.load(open(x))) for x in args.datasets ]
         self.chunk_size = datasets[0][1]["records"][0]["last"] - datasets[0][1]["records"][0]["first"]
         self.total_chunks = 0
         print("chunk size is {}".format(self.chunk_size))
@@ -87,6 +89,7 @@ class ProteinClusterService(Service):
         
         parser.add_argument("-c", "--config", default="./params.json", help="JSON config file")
         parser.add_argument("-o", "--output-dir", default="matches_out", help="output file dir")
+        parser.add_argument("--do-allall", action=store_true, help="Do the intra cluster all all. Leave out for testing clustering timing.")
 
     def make_graph(self, in_queue, args):
         """ Make the graph for this service. Returns two 
@@ -178,7 +181,7 @@ class ProteinClusterService(Service):
                 cluster_queue=c_q.queue_ref, alignment_envs=envs, node_id=node_id, ring_size=args.nodes, min_score=args.config["min_score"],
                 max_reps=args.config["max_reps"], max_n_aa_not_covered=args.config["max_n_aa_not_covered"], subsequence_homology=args.config["subsequence_homology"], 
                 total_chunks=self.total_chunks, chunk_size=self.chunk_size, should_seed=should_seed, cluster_length=args.cluster_length, 
-                candidate_map=candidate_map, executor=executor, name="protclustop")
+                candidate_map=candidate_map, executor=executor, do_allall=args.doallall, name="protclustop")
 
         return (op, nb_q, nb_q_o, cluster_tensor_out)
 
