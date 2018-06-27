@@ -144,6 +144,10 @@ def execute(args, modules):
 
   runtime = time.time() - t0
   print("Local executor runtime: {:.3f}".format(runtime))
+
+  with open("runtime.txt", "w") as outfile:
+      outfile.write("{:.3f}".format(runtime))
+
   if summary:
       summary_writer.flush(); summary_writer.close()
   if record_stats:
