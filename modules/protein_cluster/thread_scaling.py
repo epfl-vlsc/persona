@@ -15,7 +15,7 @@ def main():
             "./persona",
             "protein_cluster",
             "-c",
-            "protclstr.json",
+            "modules/protein_cluster/protclstr.json",
             "-n",
             "1",
             "-t",
