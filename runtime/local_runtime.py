@@ -1,7 +1,9 @@
 import os
 import tensorflow as tf
 import shutil
+import time
 from tensorflow.contrib.persona import pipeline
+from tensorflow.python.ops import data_flow_ops, string_ops
 from common import parse
 from common import recorder
 import contextlib
@@ -36,6 +38,25 @@ def add_default_module_args(parser):
     parser.add_argument("--summary", default=False, action="store_true", help="Add TensorFlow summary info to the graph")
     parser.add_argument("--summary-directory", default=os.path.join(cwd, "traces"), type=parse.path_exists_checker(make_if_empty=True), help="directory to record summary information into")
 
+def create_input_queue(run_args, types, shapes):
+
+  size = len(run_args[0])
+  for x in run_args:
+    if len(x) != size:
+      raise Exception("All run args are not the same size")
+
+  input_tensors = [ tf.train.limit_epochs(x, 1) for x in run_args ]
+
+  q = data_flow_ops.FIFOQueue(capacity=len(run_args[0]),
+                             dtypes=types,
+                             shapes=shapes)
+  enq = q.enqueue_many(input_tensors)
+  tf.train.queue_runner.add_queue_runner(
+          tf.train.queue_runner.QueueRunner(
+              q, [enq]))
+
+  return q
+
 def execute(args, modules):
   record_stats = args.record
   stats_directory = args.record_directory
@@ -51,7 +72,11 @@ def execute(args, modules):
     
   run_arguments = tuple(service.extract_run_args(args=args))
 
-  in_queue = tf.train.input_producer(input_tensor=run_arguments, num_epochs=1, shuffle=False, capacity=len(run_arguments))
+  if len(run_arguments) > 0 and isinstance(run_arguments[0], list):
+    print("creating input queue")
+    in_queue = create_input_queue(run_arguments, service.input_dtypes(args), service.input_shapes(args))
+  else:
+    in_queue = tf.train.input_producer(input_tensor=run_arguments, num_epochs=1, shuffle=False, capacity=len(run_arguments))
 
   # TODO currently we assume all the service_ops are the same
   service_ops, service_init_ops = service.make_graph(in_queue=in_queue,
@@ -90,6 +115,7 @@ def execute(args, modules):
           #sess.run(service_init_ops)
 
       # its possible the service is a simple run once
+      t0 = time.time()
       if len(service_ops) > 0:
           with contextlib.ExitStack() as stack:
               if record_stats:
@@ -115,6 +141,13 @@ def execute(args, modules):
               coord.join(threads, stop_grace_period_secs=10)
 
           service.on_finish(args, results)
+
+  runtime = time.time() - t0
+  print("Local executor runtime: {:.3f}".format(runtime))
+
+  with open("runtime.txt", "w") as outfile:
+      outfile.write("{:.3f}".format(runtime))
+
   if summary:
       summary_writer.flush(); summary_writer.close()
   if record_stats:

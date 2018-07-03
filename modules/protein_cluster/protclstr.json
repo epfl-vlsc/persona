@@ -1,0 +1,7 @@
+{
+  "max_reps":1,
+  "min_score":181,
+  "max_n_aa_not_covered":20,
+  "subsequence_homology":true
+}
+
