@@ -67,16 +67,14 @@ class AGDBaseCompressionService(Service):
                                        parallel_parse=args.parse_parallel,
                                        parallel_write=args.write_parallel,
                                        parallel_compress = args.compress_parallel)
-        #pid = os.getpid()
-        #print("pid is = ", pid)
+
         columns = args.dataset['columns']
         if "refcompress" not in columns:
-            columns.append('refcompress')
+            columns.append('refcompress ')
             args.dataset['columns'] = columns
         with open(args.dataset[parse.filepath_key], 'w+') as f:
             args.dataset.pop(parse.filepath_key,None)
             json.dump(args.dataset, f, indent=4)
-            #f.close()
 
         run_once = []
         return [[op]], run_once
@@ -88,6 +86,7 @@ def _make_writers(compressed_batch, output_dir, write_parallelism):
     for buf, num_recs, first_ordinal, record_id in compressed_single:
 
         first_ord_as_string = string_ops.as_string(first_ordinal, name="first_ord_as_string")
+
         result_key = string_ops.string_join([output_dir, "/", record_id, "_", first_ord_as_string, ".refcompress"], name="base_key_string")
         result = persona_ops.agd_file_system_buffer_writer(record_id=record_id,
                                                      record_type="text",
@@ -126,26 +125,33 @@ def agd_base_compression_local(in_queue,outdir=None,parallel_parse=1,parallel_wr
     parsed_results = pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=result_chunk_list)
     parsed_results_list = list(parsed_results)
 
-    parsed_result = pipeline.join(parsed_results_list, parallel=1, capacity=8, multi=True, name="parsed_result_join")[0]
+    para = 2
+    parsed_result = pipeline.join(parsed_results_list, parallel=para, capacity=8, multi=True, name="parsed_result_join")
 
+    result_out = [None]*para
+    result_buf = [None]*para
+    num_results = [None]*para
+    first_ord = [None]*para
+    record_id = [None]*para
+    res = [None]*para
+
+    for i in range(para):
     # result_buf, num_recs, first_ord, record_id
     #parsed_results = tf.contrib.persona.persona_in_pipe(key=key, dataset_dir=local_directory, columns=["results"], parse_parallel=parallel_parse,
                                                         #process_parallel=1)
-    # print("here is the parsed_result")
-    # print(parsed_result)
-    result_buf, num_results, first_ord, record_id = parsed_result
-    result_buf,record_buf = tf.unstack(result_buf)
-    # print("here is the result buf")
-    # print(result_buf)
-    # il faut que je mettre le break point ici pour pouvoir avancé plus vite dans la computation
+        result_buf[i], num_results[i], first_ord[i], record_id[i] = parsed_result[i]
+        result_buf_bis,record_buf_bis = tf.unstack(result_buf[i])
 
-    bpp = persona_ops.buffer_pair_pool(size=0, bound= False, name="output_buffer_pair_pool")
-    result_out = persona_ops.agd_base_compression(unpack=True,results=result_buf,
-        records=record_buf,chunk_size=num_results,buffer_pair_pool=bpp)
-    # print("here is the result out :")
-    # print(result_out)
-    result_to_write = pipeline.join([result_out, num_results, first_ord, record_id], parallel=parallel_write,
-        capacity=8, multi=False, name="result_to_write_join")
+        bpp = persona_ops.buffer_pair_pool(size=0, bound= False, name="output_buffer_pair_pool")
+        result_out[i] = persona_ops.agd_base_compression(unpack=True,results=result_buf_bis,
+            records=record_buf_bis,chunk_size=num_results[i],buffer_pair_pool=bpp)
+
+    for i in range(para):
+        res[i] = [result_out[i], num_results[i], first_ord[i], record_id[i]]
+
+    result_to_write = pipeline.join(res, parallel=parallel_write,
+        capacity=8, multi=True, name="result_to_write_join")
+
     compressed = compress_pipeline(result_to_write, parallel_compress)
     written = _make_writers(compressed_batch=list(compressed), output_dir=outdir, write_parallelism=parallel_write)
     recs = list(written)

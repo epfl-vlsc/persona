@@ -12,6 +12,7 @@ from common.parse import numeric_min_checker, path_exists_checker
 from ..common import parse
 
 import tensorflow as tf
+import ipdb;
 
 persona_ops = tf.contrib.persona.persona_ops()
 from tensorflow.contrib.persona import queues, pipeline
@@ -40,7 +41,6 @@ class AGDBaseDecompressionService(Service):
         parser.add_argument("-w", "--write-parallel", default=1, help="number of writers to use",
                             type=numeric_min_checker(minimum=1, message="number of writers min"))
         parser.add_argument("-d", "--dataset-dir", type=path_exists_checker(), required=True, help="Directory containing ALL of the chunk files")
-        #va falloire revoir cette argument
         parser.add_argument("-c", "--compress-parallel", default=1, help="number of compressor",
                             type=numeric_min_checker(minimum=1, message="number of compressor min"))
 
@@ -55,20 +55,23 @@ class AGDBaseDecompressionService(Service):
         if in_queue is None:
             raise EnvironmentError("in queue is none")
 
-        # print("args qui est obtenue ")
-        # print(args.dataset_dir)
         dataset_dir = args.dataset_dir
-        # dataset_dir = os.path.dirname(args.dataset_dir)
-        # print("dataset_dir = :")
-        # print(dataset_dir)
-        # op = agd_base_compression_local(in_queue=in_queue,
-        #                                parallel_parse=args.parse_parallel)
 
-        op = agd_base_compression_local(in_queue=in_queue,
+        op = agd_base_decompression_local(in_queue=in_queue,
                                        outdir=dataset_dir,
                                        parallel_parse=args.parse_parallel,
                                        parallel_write=args.write_parallel,
                                        parallel_compress = args.compress_parallel)
+
+        columns = args.dataset['columns']
+        if "uncompress" not in columns:
+            columns.append('uncompress')
+            args.dataset['columns'] = columns
+        with open(args.dataset[parse.filepath_key], 'w+') as f:
+            args.dataset.pop(parse.filepath_key,None)
+            json.dump(args.dataset, f, indent=4)
+
+            #f.close()
         run_once = []
         return [[op]], run_once
 
@@ -78,17 +81,8 @@ def _make_writers(compressed_batch, output_dir, write_parallelism):
 
     for buf, num_recs, first_ordinal, record_id in compressed_single:
 
-        # print("on check les paths : ")
-        # print(first_ordinal)
-        # print(output_dir)
-        # print(record_id)
-
         first_ord_as_string = string_ops.as_string(first_ordinal, name="first_ord_as_string")
-        # print("first_ord_as_string : ")
-        # print(first_ord_as_string)
-        result_key = string_ops.string_join([output_dir, "/", record_id, "_", first_ord_as_string, ".refdecompress"], name="base_key_string")
-        # print("le path ou on doit faire la sauvegarde est : ")
-        # print(result_key)
+        result_key = string_ops.string_join([output_dir, "/", record_id, "_", first_ord_as_string, ".uncompress"], name="base_key_string")
         result = persona_ops.agd_file_system_buffer_writer(record_id=record_id,
                                                      record_type="text",
                                                      resource_handle=buf,
@@ -120,10 +114,7 @@ def agd_base_decompression_local(in_queue,outdir=None,parallel_parse=1,parallel_
 
     parallel_key_dequeue = tuple(in_queue.dequeue() for _ in range(parallel_parse))
     result_chunks = pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue, columns=['results','refcompress'])
-
     result_chunk_list = [ list(c) for c in result_chunks ]
-
-
     parsed_results = pipeline.agd_reader_multi_column_pipeline(upstream_tensorz=result_chunk_list)
     parsed_results_list = list(parsed_results)
 
@@ -132,16 +123,17 @@ def agd_base_decompression_local(in_queue,outdir=None,parallel_parse=1,parallel_
     # result_buf, num_recs, first_ord, record_id
     #parsed_results = tf.contrib.persona.persona_in_pipe(key=key, dataset_dir=local_directory, columns=["results"], parse_parallel=parallel_parse,
                                                         #process_parallel=1)
-    # print("here is the parsed_result")
-    # print(parsed_result)
-    result_buf, num_results, first_ord, record_id = parsed_result
-    result_buf,record_buf = tf.unstack(result_buf)
-    # print("here is the result buf")
-    # print(result_buf)
 
+    result_buf, num_results, first_ord, record_id = parsed_result
+    result_buf,compress_buf = tf.unstack(result_buf)
+    tmpStr = []
+    for i in range(0, 93):
+        tmpStr.append("/scratch/references/hg19/hg19_"+str(i))
+
+    ref = persona_ops.agd_reference_genome(chunk_paths=tmpStr)
     bpp = persona_ops.buffer_pair_pool(size=0, bound= False, name="output_buffer_pair_pool")
-    result_out = persona_ops.agd_base_decompression(unpack=True,results=result_buf,
-        records=record_buf,chunk_size=num_results,buffer_pair_pool=bpp)
+    result_out = persona_ops.agd_base_decompression(unpack=True,reference=ref,compress_base=compress_buf,
+        results=result_buf,chunk_size=num_results,buffer_pair_pool=bpp)
     # print("here is the result out :")
     # print(result_out)
 

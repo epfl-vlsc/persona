@@ -46,7 +46,7 @@ def run(args):
 
   dataset_params = args.dataset
   # print("dataset param = ")
-  # print(dataset_params)
+  print(dataset_params)
   records = dataset_params['records']
   first_record = records[0]
   chunk_size = first_record["last"] - first_record["first"]
