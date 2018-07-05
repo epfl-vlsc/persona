@@ -3,6 +3,7 @@ import gzip
 import os
 import argparse
 
+
 class ListComparer:
     # Comparing two lists of elements by casting them to a set => each element occurs only once
     def __init__(self, list1, list2):
@@ -47,9 +48,10 @@ class ListComparer:
     def get_duplicates_of_list2(self):
         return list(set([x for x in self.list2 if self.list2.count(x) > 1]))
 
+
 def darwin_intervall_to_list(intervall):
     # Conwerts a Darwin range into a tuple of (MIN, MAX)
-    entries = intervall.split('.')
+    entries = intervall.split(".")
     ilow = int(entries[0])
     ihigh = int(entries[-1])
     return ilow, ihigh
@@ -58,8 +60,8 @@ def darwin_intervall_to_list(intervall):
 def candidate_pair_from_string(string):
     # Extracts the needed data of a pair from a string (from the AllAll output)
     astring = string
-    string = string.translate(None, '[]')
-    entries = string.split(',')
+    string = string.translate(None, "[]")
+    entries = string.split(",")
     if not len(entries) == 7:
         print(entries)
         print(astring)
@@ -78,7 +80,9 @@ def process_compressed_file(filename):
     f = gzip.open(filename)
     f_content = f.readlines()
     f.close()
-    data_lines = [s.split(',\n')[0].translate(None, '[]):\n') for s in f_content if '[' in s]
+    data_lines = [
+        s.split(",\n")[0].translate(None, "[]):\n") for s in f_content if "[" in s
+    ]
     data_lines = [s for s in data_lines if not s.startswith("#")]
     candidates = []
     for d in data_lines:
@@ -87,13 +91,16 @@ def process_compressed_file(filename):
         cp = candidate_pair_from_string(d)
         candidates.append(cp)
     return candidates
+
 
 def process_file(filename):
     # Read the lines of a unzipped AllAll-output file
     f = open(filename)
     f_content = f.readlines()
     f.close()
-    data_lines = [s.split(',\n')[0].translate(None, '[]):\n') for s in f_content if '[' in s]
+    data_lines = [
+        s.split(",\n")[0].translate(None, "[]):\n") for s in f_content if "[" in s
+    ]
     data_lines = [s for s in data_lines if not s.startswith("#")]
     candidates = []
     for d in data_lines:
@@ -103,15 +110,18 @@ def process_file(filename):
         candidates.append(cp)
     return candidates
 
+
 def fill_dictionary(folderpath, dictionary):
     # Fills up the dictionary (based on the folder name)
     folders = [x[0] for x in os.walk(folderpath) if x[0] != folderpath]
     for folder in folders:
-        genome1 = folder.split('/')[-1]
-        files = [f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
-        file_names = [f for f in files if f.endswith('.gz')]
+        genome1 = folder.split("/")[-1]
+        files = [
+            f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))
+        ]
+        file_names = [f for f in files if f.endswith(".gz")]
         for compressed_file in file_names:
-            genome2 = compressed_file.split('/')[-1].split('_')[0].split('.gz')[0]
+            genome2 = compressed_file.split("/")[-1].split("_")[0].split(".gz")[0]
             full_file_path = os.path.join(folder, compressed_file)
             candidates = process_compressed_file(full_file_path)
             key = tuple([genome1, genome2])
@@ -119,27 +129,33 @@ def fill_dictionary(folderpath, dictionary):
                 dictionary[key] = list()
             dictionary[key].extend(candidates)
 
+
 def fill_dictionary_nogz(folderpath, dictionary):
     # Fills up the dictionary (based on the folder name)
     folders = [x[0] for x in os.walk(folderpath) if x[0] != folderpath]
     for folder in folders:
-        genome1 = folder.split('/')[-1].upper()
-        files = [f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
-        file_names = files #[f for f in files if f.endswith('.gz')]
+        genome1 = folder.split("/")[-1].upper()
+        files = [
+            f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))
+        ]
+        file_names = files  # [f for f in files if f.endswith('.gz')]
         for compressed_file in file_names:
-            genome2 = compressed_file.split('/')[-1].split('_')[0].upper()#.split('.gz')[0]
-            print("genome 2 is {}".format(genome2))
+            genome2 = (
+                compressed_file.split("/")[-1].split("_")[0].upper()
+            )  # .split('.gz')[0]
+            # print("genome 2 is {}".format(genome2))
             full_file_path = os.path.join(folder, compressed_file)
             candidates = process_file(full_file_path)
             key = tuple([genome1, genome2])
-            if not key in dictionary:
+            if key not in dictionary:
                 dictionary[key] = list()
             dictionary[key].extend(candidates)
 
+
 def main():
-    parser = argparse.ArgumentParser(description='Compare two Darwin result DBs.')
-    parser.add_argument('allalldir', help='The dir with gz files from allall')
-    parser.add_argument('protclusterdir', help='The dir with files from protcluster')
+    parser = argparse.ArgumentParser(description="Compare two Darwin result DBs.")
+    parser.add_argument("allalldir", help="The dir with gz files from allall")
+    parser.add_argument("protclusterdir", help="The dir with files from protcluster")
 
     args = parser.parse_args()
 
@@ -152,9 +168,9 @@ def main():
     if set(ref_dict) != set(data_dict):
         print(set(ref_dict))
         print(set(data_dict))
-        print('Lengths: {} and {}'.format(len(set(ref_dict)), len(set(data_dict))))
+        print("Lengths: {} and {}".format(len(set(ref_dict)), len(set(data_dict))))
         print(set(ref_dict).symmetric_difference(set(data_dict)))
-        raise ValueError('The dictionaries do not have the same keys (genomes)!')
+        raise ValueError("The dictionaries do not have the same keys (genomes)!")
 
     reported_by_both = 0
     reported_by_ref_only = 0
@@ -179,17 +195,22 @@ def main():
 
     print("additional in data:\n {}".format(additional_pairs_in_data))
     print("additional in ref:\n {}".format(additional_pairs_in_ref))
-    percent_both = round(float(reported_by_both)/total_pairs_in_ref, 7) * 100
-    percent_reference = round(float(reported_by_ref_only)/total_pairs_in_ref, 7) * 100
-    percent_data = round(float(reported_by_data_only)/total_pairs_in_ref, 7) * 100
+    percent_both = round(float(reported_by_both) / total_pairs_in_ref, 7) * 100
+    percent_reference = round(float(reported_by_ref_only) / total_pairs_in_ref, 7) * 100
+    percent_data = round(float(reported_by_data_only) / total_pairs_in_ref, 7) * 100
 
-    output = ''
-    output += 'Reported by both: {} ({}%)\n'.format(reported_by_both, percent_both)
-    output += 'Reported by reference only: {} ({}%)\n'.format(reported_by_ref_only, percent_reference)
-    output += 'Reported by new only: {} ({}%)\n'.format(reported_by_data_only, percent_data)
-    output += 'Total reported significands: {}'.format(total_pairs_in_data)
+    output = ""
+    output += "Reported by both: {} ({}%)\n".format(reported_by_both, percent_both)
+    output += "Reported by reference only: {} ({}%)\n".format(
+        reported_by_ref_only, percent_reference
+    )
+    output += "Reported by new only: {} ({}%)\n".format(
+        reported_by_data_only, percent_data
+    )
+    output += "Total reported significands: {}".format(total_pairs_in_data)
 
     print(output)
+
 
 if __name__ == "__main__":
     main()

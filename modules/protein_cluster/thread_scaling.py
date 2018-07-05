@@ -22,10 +22,10 @@ def main():
             str(t),
             # "--do-allall",
             "-f",
-            "/scratch/proteomes/agd/bacteria_chlorobiaceae/chll2/chll2_metadata.json",
-            "/scratch/proteomes/agd/bacteria_chlorobiaceae/chlch/chlch_metadata.json",
-            "/scratch/proteomes/agd/bacteria_chlorobiaceae/chll7/chll7_metadata.json",
-            "/scratch/proteomes/agd/bacteria_chlorobiaceae/chlp8/chlp8_metadata.json",
+            "/scratch/proteomes/agd/bacteria_chlorobiaceae/bigchunk/chll2/chll2_metadata.json",
+            "/scratch/proteomes/agd/bacteria_chlorobiaceae/bigchunk/chlch/chlch_metadata.json",
+            "/scratch/proteomes/agd/bacteria_chlorobiaceae/bigchunk/chll7/chll7_metadata.json",
+            "/scratch/proteomes/agd/bacteria_chlorobiaceae/bigchunk/chlp8/chlp8_metadata.json",
         ]
 
         call(args)
@@ -36,8 +36,8 @@ def main():
 
     print("times is {}".format(times_per_threads))
     # create graph
-    #threads = [1, 2, 4, 8, 16, 32, 40, 47, 48]
-    #times_per_threads = [10, 20, 40, 80, 160, 320, 400, 470, 480]
+    # threads = [1, 2, 4, 8, 16, 32, 40, 47, 48]
+    # times_per_threads = [10, 20, 40, 80, 160, 320, 400, 470, 480]
 
     py.offline.plot(
         {
@@ -46,15 +46,15 @@ def main():
                 title="Thread Scaling (Clustering only)",
                 xaxis=dict(
                     title="# Threads",
-                    #titlefont=dict(
-                        #family="Courier New, monospace", size=18, color="#7f7f7f"
-                    #),
+                    # titlefont=dict(
+                    # family="Courier New, monospace", size=18, color="#7f7f7f"
+                    # ),
                 ),
                 yaxis=dict(
                     title="Throughput (1/s)",
-                    #titlefont=dict(
-                        #family="Courier New, monospace", size=18, color="#7f7f7f"
-                    #),
+                    # titlefont=dict(
+                    # family="Courier New, monospace", size=18, color="#7f7f7f"
+                    # ),
                 ),
             ),
         },

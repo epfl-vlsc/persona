@@ -129,6 +129,13 @@ class ProteinClusterService(Service):
             help="Number of threads in alignment executor.",
             type=numeric_min_checker(minimum=1, message="Num threads must be > 0"),
         )
+        parser.add_argument(
+            "-a",
+            "--num-threads-align",
+            default=multiprocessing.cpu_count(),
+            help="Number of threads in alignment executor.",
+            type=numeric_min_checker(minimum=1, message="Num threads must be > 0"),
+        )
 
         parser.add_argument(
             "-c", "--config", default="./params.json", help="JSON config file"
@@ -400,7 +407,9 @@ class ProteinClusterService(Service):
         candidate_map = persona_ops.candidate_map()
         print("Threads is {}".format(args.num_threads))
         executor = persona_ops.alignment_executor(
-            num_threads=args.num_threads, capacity=100
+            num_threads=args.num_threads,
+            num_threads_align=args.num_threads_align,
+            capacity=100,
         )
         all_ops = self.make_ring(
             args, args.nodes, q, envs, shapes, types, candidate_map, executor
