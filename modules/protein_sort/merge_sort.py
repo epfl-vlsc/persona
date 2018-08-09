@@ -1,3 +1,6 @@
+# Modified version of modules/sort/merge_sort.py to sort proteins based on their sequence length
+# Milad, Aug. 2018
+
 from tensorflow.contrib.persona import queues, pipeline
 
 import os
@@ -13,10 +16,8 @@ import tensorflow as tf
 
 persona_ops = tf.contrib.persona.persona_ops()
 
-# sorting criterion: equivalent of location_value
-sorting_criterion = 'prot'  # TODO check this! maybe not prot maybe prot-sequence etc...
-
-typemap = {'prot': 'text', 'metadata': 'text'}  # TODO check prot format type
+sorting_criterion = 'prot'  # equivalent of location_value in (DNA read) sort
+typemap = {'prot': 'text', 'metadata': 'text'}  # protein sequence column must be named 'prot'
 
 
 def name_generator(base_name, separator="-"):
@@ -35,19 +36,8 @@ def name_generator(base_name, separator="-"):
     return tf.string_join([base_name, var_as_string], separator=separator, name="name_generator")
 
 
-def get_inter_columns(columns):
-    return list(filter(lambda c: c != sorting_criterion, columns))
-    # if order_by == location_value:
-    #     inter_cols = ['results']
-    #     for c in columns:
-    #         if c != 'results':
-    #             inter_cols.append(c)
-    # else:
-    #     inter_cols = ['metadata']
-    #     for c in columns:
-    #         if c is not 'metadata':
-    #             inter_cols.append(c)
-    # return inter_cols
+def get_inter_columns(order_by, columns):  # presuming order_by is a valid column name!
+    return [order_by] + list(filter(lambda c: c != order_by, columns))
 
 
 def get_types_for_columns(columns):
@@ -61,84 +51,65 @@ def get_types_for_columns(columns):
 
 
 def get_record_types_for_columns(order_by, columns):
-    # typemap = {'results': 'structured', 'secondary': 'structured',
-    #            'base': 'base_compact', 'qual': 'text', 'metadata': 'text'}
-    # if order_by == location_value:
-    #     record_types = [{"type": "structured", "extension": "results"}]
-    #     for c in columns:
-    #         col = ''.join([i for i in c if not i.isdigit()])
-    #         if c != 'results':
-    #             record_types.append({"type": typemap[col], "extension": c})
-    # else:
-    record_types = [{"type": "text", "extension": "metadata"}]
+    record_types = [{"type": "text", "extension": "prot"}]
     for c in columns:
-        col = ''.join([i for i in c if not i.isdigit()])
-        if c != sorting_criterion:  # milad: instead of 'metadata'
+        col = ''.join([i for i in c if not i.isdigit()])  # why though?
+        if c != order_by:  # milad: instead of 'metadata'
             record_types.append({"type": typemap[col], "extension": c})
     return record_types
 
 
 class SortCommonService(Service):
-    columns = ["prot", "metadata"]  # TODO check if "prot" is the right column name
-    # inter_columns = ["results", "base", "qual", "metadata"]
-    # merge_result_columns = ["results", "base", "qual", "metadata"]    just inter_columns
-    # merge_meta_columns = ["metadata", "base", "qual", "results"]
-    # records_type_location = ({"type": "structured", "extension": "results"},
-    # {"type": "base_compact", "extension": "base"},
-    # {"type": "text", "extension": "qual"},
-    # {"type": "text", "extension": "metadata"},
-    # )
-    # records_type_metadata = ({"type": "text", "extension": "metadata"},
-    # {"type": "base_compact", "extension": "base"},
-    # {"type": "text", "extension": "qual"},
-    # {"type": "structured", "extension": "results"},
-    # )
+    columns = ["prot", "metadata"]
 
     inter_file_name = "intermediate_file"
 
     def distributed_capability(self):
         return False
 
-    def extract_run_args(self, args):
+    def extract_run_args(self, args):  # TODO check if args.order_by is set
         dataset = args.dataset
         recs = [a["path"] for a in dataset["records"]]
 
         rec = dataset["records"][0]
         args.chunk = int(rec["last"]) - int(rec["first"])
-        print("!! MILAD !! Chunk size is {}".format(args.chunk))
+        # print("Chunk size is {}".format(args.chunk))
         num_file_keys = len(recs)
         if num_file_keys < args.column_grouping:
             # print("Column grouping factor too low! Setting to number of file keys ({})".format(num_file_keys))
             args.column_grouping = num_file_keys
 
         self.columns = dataset['columns']
-        self.inter_columns = get_inter_columns(self.columns)  # TODO milad check if defining attr on top is ok
-        # self.inter_columns = get_inter_columns(args.order_by, self.columns)
+        self.inter_columns = get_inter_columns(args.order_by, self.columns)
         # print("sorting with columns {}".format(self.columns))
         # print("inter columns is {}".format(self.inter_columns))
         return recs
 
-    def add_graph_args(self, parser):
-        pass
+    def add_graph_args(self, parser):  # TODO proper description for the arguments
         # adds the common args to all graphs
-        # parser.add_argument("-r", "--sort-read-parallel", default=1,
-        #                     type=numeric_min_checker(minimum=1, message="read parallelism min for sort phase"),
-        #                     help="total parallelism level for local read pipeline for sort phase")
+        parser.add_argument("-r", "--sort-read-parallel", default=1,
+                            type=numeric_min_checker(minimum=1, message="read parallelism min for sort phase"),
+                            help="total parallelism level for local read pipeline for sort phase")
+
+        parser.add_argument("-p", "--sort-process-parallel", default=1,
+                            type=numeric_min_checker(minimum=1, message="sort process parallel message!"),
+                            help="sort process parallel help")
+
         # parser.add_argument("-p", "--sort-process-parallel", default=1,
         #                     type=numeric_min_checker(minimum=1, message="process parallelism min for sort phase"),
         #                     help="total parallelism level for local read pipeline for sort phase")
-        # parser.add_argument("-k", "--compress-parallel", default=1, type=numeric_min_checker(minimum=1,
-        #                                                                                      message="compress parallelism min for post merge write"),
-        #                     help="total parallelism level for compression")
-        # parser.add_argument("-c", "--column-grouping", default=5, help="grouping factor for parallel chunk sort",
-        #                     type=numeric_min_checker(minimum=1, message="column grouping min"))
-        # parser.add_argument("-s", "--sort-parallel", default=1, help="number of sorting pipelines to run in parallel",
-        #                     type=numeric_min_checker(minimum=1, message="sorting pipeline min"))
-        # parser.add_argument("-w", "--write-parallel", default=1, help="number of writing pipelines to run in parallel",
-        #                     type=numeric_min_checker(minimum=1, message="writing pipeline min"))
-        # # parser.add_argument("--chunk", default=100000, type=numeric_min_checker(1, "need non-negative chunk size"), help="chunk size for final merge stage")
-        # parser.add_argument("-b", "--order-by", default="location", choices=["location", "metadata"],
-        #                     help="sort by this parameter [location | metadata]")
+        parser.add_argument("-k", "--compress-parallel", default=1, type=numeric_min_checker(minimum=1,
+                                                                                             message="compress parallelism min for post merge write"),
+                            help="total parallelism level for compression")
+        parser.add_argument("-c", "--column-grouping", default=5, help="grouping factor for parallel chunk sort",
+                            type=numeric_min_checker(minimum=1, message="column grouping min"))
+        parser.add_argument("-s", "--sort-parallel", default=1, help="number of sorting pipelines to run in parallel",
+                            type=numeric_min_checker(minimum=1, message="sorting pipeline min"))
+        parser.add_argument("-w", "--write-parallel", default=1, help="number of writing pipelines to run in parallel",
+                            type=numeric_min_checker(minimum=1, message="writing pipeline min"))
+        parser.add_argument("--chunk", default=100000, type=numeric_min_checker(1, "need non-negative chunk size"), help="chunk size for final merge stage")
+        parser.add_argument("-b", "--order-by", default="prot", choices=["prot", "metadata"],
+                            help="sort by this parameter [prot | metadata]")
 
     def make_compressors(self, recs_and_handles, bufpool):
         # buf_pool = persona_ops.buffer_pool(size=0, bound=False, name="bufpool")
@@ -147,9 +118,11 @@ class SortCommonService(Service):
             compressed_bufs = []
             for i, buf in enumerate(a[:len(self.inter_columns)]):
                 # compact = i == 1  # bases is always second column
-                compact = i == 0  # milad
-                compressed_bufs.append(  # TODO milad this is wrong! buffer_pair_compressor is for DNA. prot equivalent?
-                    persona_ops.buffer_pair_compressor(buffer_pool=bufpool, buffer_pair=buf, pack=compact))
+                # compact = i == 0  # milad: pack = False always for protein
+                compressed_bufs.append(
+                    persona_ops.buffer_pair_compressor(buffer_pool=bufpool, buffer_pair=buf, pack=False))
+                    # persona_ops.buffer_pair_compressor(buffer_pool=bufpool, buffer_pair=buf, pack=compact))
+                # pack is hardcoded to be false
 
             compressed_matrix = tf.stack(compressed_bufs)
             yield [compressed_matrix] + a[len(self.inter_columns):]
@@ -165,19 +138,14 @@ class SortCommonService(Service):
 
         # bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="local_read_merge_buffer_list_pool")
 
-        if args.order_by == location_value:
-            merge = persona_ops.agd_merge
-        else:
-            merge = persona_ops.agd_merge_metadata
+        merge = persona_ops.agd_protein_merge
 
         merge_op = merge(chunk_size=args.chunk,
                          buffer_pair_pool=bpp,
                          chunk_group_handles=chunks_to_merge,
                          output_buffer_queue_handle=q.queue_ref,
-                         name="agd_local_merge")
-
+                         name="agd_protein_merge")  # name="agd_local_merge"
         tf.train.queue_runner.add_queue_runner(tf.train.queue_runner.QueueRunner(q, [merge_op]))
-
         # num_recs, results, base, qual, meta
         # num_recs, results, base, qual, meta = q.dequeue()
         val = q.dequeue()
@@ -188,15 +156,18 @@ class SortCommonService(Service):
         first_ord = first_ordinal.assign_add(math_ops.to_int64(args.chunk, name="first_ord_cast_to_64"),
                                              use_locking=True)
         first_ord_str = string_ops.as_string(first_ord, name="first_ord_string")
+
+        #file_name = string_ops.string_join(["/scratch/mrazavi/proteins/output", "/", record_name_constant, first_ord_str],
+        #                                   name="file_name_string_joiner")  # TODO remove this and use the one below
         file_name = string_ops.string_join([args.dataset_dir, "/", record_name_constant, first_ord_str],
-                                           name="file_name_string_joiner")
+                                           name="file_name_string_joiner")  # TODO cm for dbg
 
         out_tuple = val[1:] + [record_name, first_ord, num_recs, file_name]
 
         return out_tuple
 
     def make_sort_pipeline(self, args, input_gen, buf_pool, bufpair_pool):
-
+        # print(args)
         ready_to_process = pipeline.join(upstream_tensors=input_gen,
                                          parallel=args.sort_process_parallel,
                                          capacity=4,  # multiplied by some factor?
@@ -221,10 +192,7 @@ class SortCommonService(Service):
 
         # bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="local_read_buffer_pair_pool")
 
-        if args.order_by == location_value:
-            sorter = persona_ops.agd_sort
-        else:
-            sorter = persona_ops.agd_sort_metadata
+        sorter = persona_ops.agd_protein_sort
 
         sorters = []
         for i in range(args.sort_parallel):
@@ -234,10 +202,9 @@ class SortCommonService(Service):
             cols = tf.stack(ready[1:-1])
             superchunk_matrix, num_recs = sorter(buffer_pair_pool=bufpair_pool,
                                                  results_handles=r, column_handles=cols,
-                                                 num_records=num, name="local_read_agd_sort")
+                                                 num_records=num, name="local_protein_sequence_agd_sort")
             # super chunk is r, b, q, m
             sorters.append([superchunk_matrix, num_recs, name_queue[i]])
-
         return sorters
 
 
@@ -261,10 +228,14 @@ class LocalCommonService(SortCommonService):
         for f in os.listdir(args.dataset_dir):
             if self.inter_file_name in f:
                 os.remove(os.path.join(args.dataset_dir, f))
-
         # add or change the sort order
         # meta = "test.json"
-        args.dataset['sort'] = 'coordinate' if args.order_by == location_value else 'queryname'
+
+        # TODO milad check if this is correct
+        args.dataset['sort'] = 'coordinate' if args.order_by == sorting_criterion else 'queryname'
+        # args.dataset['sort'] = 'coordinate' if args.order_by == location_value else 'queryname'
+
+
         # for rec in args.dataset['records']:
         #    rec['path'] = rec['path'].split('_')[0] + "_out_" + str(rec['first'])
         for metafile in os.listdir(args.dataset_dir):
@@ -279,7 +250,7 @@ class LocalSortService(LocalCommonService):
     """ A service to use the SNAP aligner with a local dataset """
 
     def get_shortname(self):
-        return "local"
+        return "prot_sort"
 
     def output_dtypes(self, args):
         return (tf.dtypes.string,)
@@ -304,7 +275,7 @@ class LocalSortService(LocalCommonService):
             for i, b in enumerate(bufs):
                 result_key = string_ops.string_join([output_dir, "/", record_id, ".", self.inter_columns[i]],
                                                     name="key_string")
-
+                # print(self.inter_columns)
                 result = persona_ops.agd_file_system_buffer_pair_writer(record_id=record_id,
                                                                         record_type=types[i],
                                                                         resource_handle=b,
@@ -342,7 +313,6 @@ class LocalSortService(LocalCommonService):
 
         # read_files: [(file_path, (mmaped_file_handles, a gen)) x N]
         mmap_pool = persona_ops.m_map_pool(name="mmap_pool", size=10, bound=False)
-
         read_files = list(list(a) for a in pipeline.local_read_pipeline(upstream_tensors=parallel_key_dequeue,
                                                                         columns=self.inter_columns,
                                                                         mmap_pool=mmap_pool))
@@ -395,6 +365,8 @@ class LocalSortService(LocalCommonService):
         compressed_bufs = list(self.make_compressors(compress_queue, buf_pool))
         # print(compressed_bufs)
         writers = list(list(a) for a in self.make_writers(args, compressed_bufs))
-
+        # input("press enter")
         return writers, []
+
+
 

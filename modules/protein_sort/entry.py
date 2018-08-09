@@ -1,3 +1,7 @@
+# Modified version of modules/sort/entry.py to sort proteins based on their sequence length
+# Protein sort C++ operations are in persona/kernels/sort
+# Milad, Aug. 2018
+
 import os
 from . import merge_sort
 from ..common import service
@@ -21,4 +25,4 @@ def lookup_service(name):
 
 
 def get_tooltip():
-    return "Sort an AGD protein dataset based on length"
+    return "Sort an AGD protein dataset based on the length of prot column"
