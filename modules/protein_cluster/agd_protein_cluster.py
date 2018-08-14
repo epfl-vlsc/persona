@@ -247,14 +247,18 @@ class ProteinClusterService(Service):
     ):
         # output (op, neighbor_queue, neighbor_queue_out, cluster_tensor_out)
         nb_q = data_flow_ops.FIFOQueue(
-            capacity=20,  # TODO capacity
+            capacity=40,  # TODO capacity
             dtypes=types,
             shapes=shapes,
             name="nb_" + str(node_id),
         )
 
+        with tf.name_scope(nb_q.name):
+            summary.scalar("fraction_of_%d_full" % 40,
+                tf.to_float(nb_q.size()) * (1. / 40))
+
         nb_q_o = data_flow_ops.FIFOQueue(
-            capacity=20,  # TODO capacity
+            capacity=40,  # TODO capacity
             dtypes=types,
             shapes=shapes,
             name="nbo_" + str(node_id),
