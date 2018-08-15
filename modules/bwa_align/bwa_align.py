@@ -5,8 +5,9 @@ import multiprocessing
 import os
 import shutil
 import json
+import glob
 from ..common.service import Service
-from common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker
+from common.parse import numeric_min_checker, path_exists_checker, non_empty_string_checker, yes_or_no
 from ..common import parse
 
 import tensorflow as tf
@@ -249,7 +250,7 @@ class LocalCommonService(BWACommonService):
         _, ref_seqs, lens = results[0]
         ref_list = []
         for i, ref in enumerate(ref_seqs):
-            ref_list.append({'name':ref.decode("utf-8"), 'length':lens[i].item(), 'index':i})
+            ref_list.append({'name':ref.decode("utf-8"), 'length': int(lens[i].decode("utf-8")), 'index': i})
         args.dataset['reference_contigs'] = ref_list
         args.dataset['reference'] = args.index_path
 
