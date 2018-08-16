@@ -87,6 +87,10 @@ class SortCommonService(Service):
 
     def add_graph_args(self, parser):  # TODO proper description for the arguments
         # adds the common args to all graphs
+
+        parser.add_argument("-a", "--sort-ascending", action="store_true",
+                            help="sort protein sequences based on their length in ascending order")
+
         parser.add_argument("-r", "--sort-read-parallel", default=1,
                             type=numeric_min_checker(minimum=1, message="read parallelism min for sort phase"),
                             help="total parallelism level for local read pipeline for sort phase")
@@ -139,8 +143,8 @@ class SortCommonService(Service):
         # bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="local_read_merge_buffer_list_pool")
 
         merge = persona_ops.agd_protein_merge
-
         merge_op = merge(chunk_size=args.chunk,
+                         sort_ascending=args.sort_ascending,
                          buffer_pair_pool=bpp,
                          chunk_group_handles=chunks_to_merge,
                          output_buffer_queue_handle=q.queue_ref,
@@ -157,10 +161,8 @@ class SortCommonService(Service):
                                              use_locking=True)
         first_ord_str = string_ops.as_string(first_ord, name="first_ord_string")
 
-        #file_name = string_ops.string_join(["/scratch/mrazavi/proteins/output", "/", record_name_constant, first_ord_str],
-        #                                   name="file_name_string_joiner")  # TODO remove this and use the one below
         file_name = string_ops.string_join([args.dataset_dir, "/", record_name_constant, first_ord_str],
-                                           name="file_name_string_joiner")  # TODO cm for dbg
+                                            name="file_name_string_joiner")
 
         out_tuple = val[1:] + [record_name, first_ord, num_recs, file_name]
 
@@ -191,7 +193,6 @@ class SortCommonService(Service):
                                    multi=False, name="inter_file_gen_q")
 
         # bpp = persona_ops.buffer_pair_pool(size=0, bound=False, name="local_read_buffer_pair_pool")
-
         sorter = persona_ops.agd_protein_sort
 
         sorters = []
@@ -200,7 +201,8 @@ class SortCommonService(Service):
             num = ready[-1]
             r = ready[0]  # the sort predicate column must be first
             cols = tf.stack(ready[1:-1])
-            superchunk_matrix, num_recs = sorter(buffer_pair_pool=bufpair_pool,
+            superchunk_matrix, num_recs = sorter(sort_ascending=args.sort_ascending,
+                                                 buffer_pair_pool=bufpair_pool,
                                                  results_handles=r, column_handles=cols,
                                                  num_records=num, name="local_protein_sequence_agd_sort")
             # super chunk is r, b, q, m
@@ -300,7 +302,6 @@ class LocalSortService(LocalCommonService):
         # print("final write types {}".format(types))
         writers = pipeline.local_write_pipeline(upstream_tensors=[compressed_buf], compressed=True, record_types=types,
                                                 name="local_write_pipeline")
-
         return writers
 
     def make_graph(self, in_queue, args):
