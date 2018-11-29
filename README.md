@@ -3,7 +3,7 @@
 
 The Persona shell consists of a simple command parser and set of Python submodules that implement common bioinformatics tools using Persona's TensorFlow-based dataflow framework. 
 
-Before continuing, make sure you have installed the [Persona System](https://github.com:epfl-vlsc/persona-system) and entered the virtual environment:
+Before continuing, make sure you have installed the [Persona System](https://github.com/epfl-vlsc/persona-system) and entered the virtual environment:
 
 ```shell
 source path-to-persona-system/python-dev/bin/activate
